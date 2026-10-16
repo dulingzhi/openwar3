@@ -14,7 +14,7 @@ export const revalidate = 300;
 const FEATURES: ReadonlyArray<{ title: string; body: string; media: Media }> = [
   {
     title: "A faithful recreation",
-    body: "Every unit, ability, cost and timing is read straight out of your own Warcraft III: The Frozen Throne 1.30.4 install. OpenWar3 is original code and ships zero Blizzard assets.",
+    body: "Every unit, ability, cost and timing is read straight out of your own Warcraft III: The Frozen Throne install — 1.30.4 or 1.27. OpenWar3 is original code and ships zero Blizzard assets.",
     media: { kind: "image", src: "/media/game1.avif", alt: "An orc base in OpenWar3, training from the Altar of Storms" },
   },
   {
@@ -108,8 +108,8 @@ export default async function Home() {
             />
             <p className="hero__tagline">Warcraft III: The Frozen Throne, rebuilt in the open.</p>
             <p className="hero__lede">
-              A modern, open-source reimplementation of the Warcraft III engine. Bring your own 1.30.4 install — we bring the
-              engine.
+              A modern, open-source reimplementation of the Warcraft III engine. Bring your own 1.30.4 or 1.27 install — we
+              bring the engine.
             </p>
             <Downloads release={release} />
           </div>
