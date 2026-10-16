@@ -35,8 +35,11 @@ anyone still plays, so they are refused by name.
   attributes and refunds do not move between these two builds.
 - **21 of the 22 melee constants** in `Blizzard.j` are identical (`MELEE_STARTING_GOLD_V1` 500,
   `MELEE_HERO_LIMIT` 3, …).
-- **`Melee_V0`/`Custom_V0`/`Custom_V1` do not exist**, which `EditionDataSource` already
-  tolerated — an MPQ-era install reads the live tables throughout (`docs/editions.md`).
+- **`Melee_V0`/`Custom_V0`/`Custom_V1` DO exist** — 68, 64 and 64 files — so the edition overlay
+  is live here exactly as on 1.30.4, and a Reign of Chaos melee game reads `Melee_V0`'s balance
+  table. `Melee_V1` is absent, which is correct: a Frozen Throne melee game reads the live paths.
+  `UnitData.slk` is absent from all three, so `EditionDataSource` falls back per file and only the
+  BALANCE over the live unit table is the edition's (`docs/editions.md`).
 - **The four unit/ability tables differ**, as they should: those are the balance changes. They
   are read from the install at runtime, so a 1.27 match is a 1.27 match throughout.
 

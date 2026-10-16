@@ -23,7 +23,15 @@ import { dataSetFolder } from "../data/edition";
 // mounted install and every match may bring the other kind of map. Anything that parsed a table
 // before the flip still holds the old set's copy; the things that cache across matches are told
 // through `onEditionChange`, which both switches fire (src/data/edition.ts).
-// An MPQ-era install has none of the four folders, so it reads the live tables throughout.
+// **How much of this an MPQ-era install actually has depends on WHICH one.** A 1.27 folder was
+// measured rather than assumed: it carries `Melee_V0` (68 files), `Custom_V0` (64) and `Custom_V1`
+// (64) — balance tables, unit funcs, the four race AI scripts and the localized strings — and no
+// `Melee_V1`, which is right, because a Frozen Throne melee game reads the LIVE paths. So the
+// overlay is live on 1.27 too, and a Reign of Chaos melee game there reads `Melee_V0`'s
+// `UnitBalance.slk` exactly as it does on 1.30.4. What a set does not have, `resolve` falls back
+// from on its own: `UnitData.slk` is absent from all three, so the unit table is the live one and
+// only the balance over it is the edition's. An install with none of the folders at all reads the
+// live tables throughout, which is what this used to say of every MPQ folder.
 
 export class EditionDataSource implements DataSource {
   constructor(private base: DataSource) {}

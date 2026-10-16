@@ -75,7 +75,14 @@ whole client already uses to decide melee rules against a map's own triggers; `s
 it before a byte of the map is read, and `exitToMenu` puts it back on melee so the shell's own
 table reads (map previews, the hotkey cards, tooltips) describe the ordinary game.
 
-An MPQ-era install has none of the three folders, so it reads the same tables throughout.
+**An MPQ-era install is not one thing here.** A 1.27 folder was measured: it holds `Melee_V0`
+(68 files), `Custom_V0` (64) and `Custom_V1` (64) — the balance tables, the unit funcs, the four
+race AI scripts and the localized string tables — and no `Melee_V1`, which is correct rather than
+missing, since a Frozen Throne melee game reads the live paths. So a Reign of Chaos or custom game
+on 1.27 gets its own set exactly as on 1.30.4. A set is also not all-or-nothing: `UnitData.slk` is
+absent from all three, so the unit table is live and only the BALANCE layered over it is the
+edition's (`vfs/edition.ts` `resolve` falls back per file). An install with none of the folders
+reads the live tables throughout.
 
 **How much this moves is the reason it is tested rather than assumed.** The two games are not a
 reskin of each other: **232 of the 468 units they both carry change ARMOUR CLASS**, and the
