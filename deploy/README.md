@@ -49,9 +49,10 @@ Two ports would mean two things to open in a firewall and a way for them to disa
 ## Deploying an update
 
 ```bash
-# 1. the game  (from a checkout: pnpm build)
+# 1. the game — built by deploy/build-site.mjs, NOT plain `pnpm build` (see below)
+node deploy/build-site.mjs
 tar czf site.tgz -C dist .
-scp site.tgz <host>:~/openwar3/          && ssh <host> 'tar xzf ~/openwar3/site.tgz -C ~/openwar3/site'
+scp site.tgz <host>:~/openwar3/          && ssh <host> 'rm -rf ~/openwar3/site.old && mv ~/openwar3/site ~/openwar3/site.old && mkdir ~/openwar3/site && tar xzf ~/openwar3/site.tgz -C ~/openwar3/site'
 
 # 2. the server sources, when they change
 scp electron/server.mjs server/*.mjs deploy/serve.mjs …
@@ -66,6 +67,39 @@ ssh <host> '~/openwar3/deploy/openwar3.sh restart'
 **Build the page on the host, not on your laptop.** Next resolves platform-specific binaries
 (`next-swc`) at install time, so a `.next/` and `node_modules/` built on Windows are not the ones
 a Linux host can run.
+
+## The game build is `deploy/build-site.mjs`, and the difference is one env var
+
+The client watches **two** kinds of relay (`src/net/lobby.ts`): its own origin, derived from
+`window.location`, and the **official** server — a hostname compiled into every shipped copy so
+the player base has one meeting place (`src/net/officialServer.ts`).
+
+On a box that serves its own relay the second one is wrong twice over: it puts a foreign server
+in the player's Servers List as a row they *cannot remove* (an official row has no ✕), and a game
+created there is simulated on somebody else's infrastructure. So the deployed build sets
+`VITE_OFFICIAL_SERVER=""`, which leaves exactly one relay — the box's own, same-origin, and
+requiring no address because **whoever serves the page serves the relay**.
+
+`VITE_RELAY_URL` is deliberately *not* set: naming the relay explicitly would hardcode an address
+that the same-origin derivation already gets right, and would break the property that makes LAN
+play work at all — a machine that can load the page can reach the relay by construction.
+
+This is not a `.env.production` in the repository, because that would strip the official server
+from the **released desktop app** too, which is the one build that must keep it.
+
+## What is deliberately NOT on this host
+
+**Blizzard's game files.** A visitor loads their own Warcraft III folder — that is the load gate
+on the page, and it is the architecture rather than a limitation: OpenWar3 ships and hosts zero
+Blizzard content (CLAUDE.md "Legal boundary"), which is why an authoritative *server* was rejected
+in favour of a relay that forwards opaque payloads and "never loads Blizzard data"
+(`server/relay.mjs`). The dev server's asset route is `apply: "serve"` for the same reason — it is
+not code that got switched off in a build, it is code that was never emitted — and deploying a
+copy of it would make that constraint a property of a box's configuration instead of the artifact.
+
+Anyone who wants a deployment that plays without a local install is asking for a different thing,
+and it needs to be a deliberate decision made with the licence in view, not a side effect of a
+deploy.
 
 ## `deploy/serve.mjs` exists for one reason
 

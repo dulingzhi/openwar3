@@ -9,6 +9,7 @@
     "dev": "vite",
     "dev:log": "node tools/dev-log.mjs",
     "build": "node tools/import-cycle-test.mjs && tsc --noEmit && vite build",
+  "build:host": "node deploy/build-site.mjs",
     "cycles": "node tools/import-cycle-test.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
