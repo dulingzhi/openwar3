@@ -56,6 +56,38 @@ console.log("wc3TextDecoder — a file's own declaration decides its codepage");
   // No BOM: nothing changes for the installs that always worked. windows-1252 maps 0x80–0x9F to
   // real punctuation; `latin1` returns those bytes unchanged, which is what a caller parsing
   // numbers out of an FDF wants.
+  // …and, because a BOM is NOT how every localized file announces itself, a BOM-less file that
+  // is valid UTF-8 throughout. Measured on a Simplified-Chinese 1.27 install: of the 85 files
+  // carrying CJK, 56 have the BOM and 29 do not, and the split runs straight through the object
+  // data — `HumanUnitStrings.txt` has one and `NightElfUnitStrings.txt` does not, which is why
+  // the Human menu read correctly while every Night Elf unit was `å°ç²¾çµ`.
+  const chineseNoBom = bytes(utf8('Name=小精灵'));
+  ok("a BOM-less file that IS valid UTF-8 is read as UTF-8",
+     wc3TextDecoder().decode(chineseNoBom) === "Name=小精灵",
+     JSON.stringify(wc3TextDecoder().decode(chineseNoBom)));
+  ok("…through the `latin1` callers too",
+     wc3TextDecoder("latin1").decode(chineseNoBom) === "Name=小精灵");
+  ok("…and through a caller that already said UTF-8",
+     wc3TextDecoder("utf-8").decode(chineseNoBom) === "Name=小精灵");
+
+  // THE NO-REGRESSION PROPERTY, which is the whole reason the sniff is safe. A windows-1252 file
+  // has high bytes that are malformed as UTF-8 — a German `ü` is the single byte 0xFC, and UTF-8
+  // has no lead byte that high — so every install that read correctly still does. The fixture is
+  // the FILE's own bytes ("Grüße" in windows-1252: 47 72 FC DF 65), not UTF-8 re-encoded.
+  const german = bytes([0x47, 0x72, 0xfc, 0xdf, 0x65]);
+  ok("a BOM-less windows-1252 file is still windows-1252",
+     wc3TextDecoder().decode(german) === "Grüße",
+     JSON.stringify(wc3TextDecoder().decode(german)));
+  ok("…an umlaut next to a quote is not mistaken for a sequence",
+     wc3TextDecoder().decode(bytes([0xfc, 0x93])) === "ü“",
+     JSON.stringify(wc3TextDecoder().decode(bytes([0xfc, 0x93]))));
+  // GBK is what a different Chinese install would use, and it is NOT valid UTF-8 — so it keeps
+  // the codepage and stays garbled, exactly as documented, rather than turning into a third kind
+  // of garbage. "中文" in GBK is D6 D0 CE C4; D6 D0 is a malformed sequence.
+  ok("a GBK byte pair falls through to the codepage",
+     wc3TextDecoder().decode(bytes([0xd6, 0xd0, 0xce, 0xc4])) === "ÖÐÎÄ",
+     JSON.stringify(wc3TextDecoder().decode(bytes([0xd6, 0xd0, 0xce, 0xc4]))));
+
   const accent = bytes(utf8("Caf"), [0xe9]); // "Café", latin-1 encoded
   ok("a file with no BOM is read with the caller's codepage", wc3TextDecoder().decode(accent) === "Café", JSON.stringify(wc3TextDecoder().decode(accent)));
   // `latin1` is NOT iso-8859-1 here: the Encoding standard makes it an ALIAS for windows-1252, so

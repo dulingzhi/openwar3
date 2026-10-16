@@ -95,22 +95,40 @@ match quietly fought on 2.0.3's Piercing-vs-Heavy table. `patchesApply()` /`setP
 
 ## A localized install's text is UTF-8
 
-The developer's 1.27 folder is a Simplified-Chinese install, and its data files begin `EF BB BF`
-— a **UTF-8 byte-order mark** — over valid UTF-8. Read as windows-1252, as this engine had read
-every `*Strings.txt`/`*.fdf` since it was written, the main menu came out `å•äººæ¨¡å¼` where it
-should read 单人模式.
+The developer's 1.27 folder is a Simplified-Chinese install, and its text files are **UTF-8**.
+Read as windows-1252, as this engine had read every `*Strings.txt`/`*.fdf` since it was written,
+the main menu came out `å•äººæ¨¡å¼` where it should read 单人模式.
 
-Worse than the visible half: the BOM landed **inside the first key of the file**, so
-`Units\CommandStrings.txt` opened with a section named `ï»¿[CmdMove]` — which matches nothing.
+**The files do not all announce it the same way, and that split is what made this take two
+passes.** Of the 85 files in that install carrying CJK text, **56 begin with a UTF-8 BOM and 29 do
+not** — and the split runs straight through the object data, so it looks arbitrary from outside:
 
-[`src/vfs/text.ts`](../src/vfs/text.ts) is the one decoder now, and its rule is the file's own
-declaration rather than a guess: a BOM means UTF-8 (and is removed, not decoded), anything else
-is read exactly as before. That cannot regress a file that used to read correctly — a BOM'd file
-was already mojibake — and it is pinned by `tools/wc3-text-test.mjs` (`pnpm text:test`).
+| file | BOM | `hfoo` / `ewsp` reads |
+|---|---|---|
+| `Units\HumanUnitStrings.txt` | yes | 步兵 ✓ |
+| `Units\NeutralUnitStrings.txt` | yes | 雇佣兵营地 ✓ |
+| `Units\NightElfUnitStrings.txt` | **no** | `å°ç²¾çµ` ✗ (should be 小精灵) |
+| `Units\NeutralUpgradeStrings.txt` | **no** | `é˜²å¾¡æµ®é›•` ✗ (should be 防御浮雕) |
 
-**It is not a general localization fix.** A Chinese or Russian install whose files carry *no* BOM
-(GBK, CP1251) is still read as windows-1252 and still garbled, and there is no such install in
-hand to measure a rule against. Inventing one would be guessing.
+So [`src/vfs/text.ts`](../src/vfs/text.ts) is the one decoder, and its rule has two halves:
+
+- **a BOM means UTF-8**, and is *removed* rather than decoded — as `latin1` it is three visible
+  characters and as `utf-8` a U+FEFF, and either way it lands inside the file's first key, so
+  `Units\CommandStrings.txt` opened with a section named `ï»¿[CmdMove]` that matches nothing;
+- **no BOM, but the file IS valid UTF-8** — every byte, by the strict `fatal` decoder — means
+  UTF-8 too. That is a fact about the bytes rather than a guess at a codepage.
+
+**Why the second half cannot regress an install that already read correctly.** A windows-1252 file
+has high bytes that are *not* valid UTF-8 — a German `ü` is the single byte `0xFC`, and UTF-8 has
+no lead byte that high — so it falls through to the codepage exactly as before. Pure ASCII is
+skipped without decoding at all, since both codepages agree on it. To be misread, a real 1252 file
+would have to *literally contain* already-double-encoded text, which appears in no game file.
+
+It is **not** a general localization fix. A GBK or CP1251 install is likewise invalid UTF-8, so it
+falls through and is still garbled — and there is no such install here to measure a rule against.
+
+Both halves are pinned by `tools/wc3-text-test.mjs` (`pnpm text:test`), including the negative
+cases (a real 1252 file, a lone umlaut, a GBK byte pair) that keep the sniff honest.
 
 ## Known, accepted differences on 1.27
 

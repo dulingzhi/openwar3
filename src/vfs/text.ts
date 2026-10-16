@@ -5,26 +5,38 @@
 // World Editor wrote in 2002 and what the engine still reads. For the English, German and French
 // installs that codepage is windows-1252, which is what this engine assumed for its whole life.
 //
-// **A LOCALIZED install is the case that assumption misses, and it announces itself.** The
-// sampled files of a Simplified-Chinese 1.27 install begin `EF BB BF` — the UTF-8 byte-order
-// mark — and the rest of the file is valid UTF-8. Read as windows-1252 those bytes become
-// `ï»¿` followed by mojibake, so the main menu reads `å¼€å§‹æ¸¸æˆ` where it should read 开始游戏,
-// and — worse than the visible half — the FIRST key of such a file is mis-keyed, because the
-// BOM lands inside it: `Units\CommandStrings.txt` opens with `ï»¿[CmdMove]`, and a section
-// named that matches nothing.
+// **A localized install is the case that assumption misses, and it does not announce itself the
+// same way twice.** Measured against a Simplified-Chinese 1.27 install, of the 85 files carrying
+// CJK text, **56 begin with the UTF-8 byte-order mark and 29 do not** — and the split runs
+// straight through the object data, which is what makes it look arbitrary from the outside:
 //
-// So the rule is the file's own declaration rather than a guess: **a BOM means UTF-8**, and a
-// file without one is read exactly as it was before. That is strictly more correct than the
-// alternative (sniffing a codepage from the bytes) and it cannot regress a file that used to
-// read correctly — a BOM'd file was already mojibake, so there is nothing to break.
+//     Units\HumanUnitStrings.txt      BOM      hfoo → 步兵          ✓
+//     Units\NeutralUnitStrings.txt    BOM      nmer → 雇佣兵营地     ✓
+//     Units\NightElfUnitStrings.txt   no BOM   ewsp → å°ç²¾çµ      ✗
+//     Units\NeutralUpgradeStrings.txt no BOM   …      æœˆä¹‹åŠ›é‡     ✗
 //
-// It is NOT a general localization fix. A Chinese or Russian install whose files carry no BOM
-// (GBK, CP1251) is still read as windows-1252 and still garbled, and there is no evidence in
-// hand of such an install to test a rule against — inventing a heuristic for one would be
-// guessing, which is what the prime directive forbids. If one turns up, its BOM-less files belong
-// here, decided by something measured rather than assumed.
+// So one rule is not enough and neither is the other:
+//
+//   • a BOM means UTF-8, and is REMOVED rather than decoded (as `latin1` it is three visible
+//     characters, as `utf-8` a U+FEFF — either way it lands inside the file's first key, and
+//     `ï»¿[CmdMove]` matches nothing);
+//   • **no BOM, but the file IS valid UTF-8** — every byte, by the strict decoder — means UTF-8
+//     too. That is not a guess at a codepage, it is a fact about the bytes, and it is checked
+//     with a `fatal` decode so a single malformed sequence settles it.
+//
+// **Why the sniff cannot regress an install that already read correctly.** A windows-1252 file
+// has high bytes that are NOT valid UTF-8 — a German `ü` is one byte, 0xFC, and a lone
+// continuation byte is malformed by definition — so it falls through to the codepage exactly as
+// before. Pure ASCII is skipped without decoding at all (both codepages agree on it). To be
+// misread, a real 1252 file would have to *literally contain* text that is already double-encoded,
+// which is a thing that appears in no game file. And a GBK or CP1251 install is likewise invalid
+// UTF-8 and so still falls through, still garbled, and still unmeasured — there is no such install
+// here to test a rule against.
+//
+// It is NOT a general localization fix, and it does not claim to be one: it moves the line from
+// "a BOM'd UTF-8 install" to "a UTF-8 install".
 
-/** The UTF-8 byte-order mark, which is also the whole of the detection. */
+/** The UTF-8 byte-order mark. */
 const UTF8_BOM = [0xef, 0xbb, 0xbf];
 
 /**
@@ -47,22 +59,47 @@ export function wc3TextDecoder(fallback: "windows-1252" | "latin1" | "utf-8" = "
   decode(bytes: Wc3TextBytes): string;
 } {
   const plain = new TextDecoder(fallback);
-  /** Built on first use, so the common BOM-less file pays for one decoder and not two. */
+  /** Built on first use, so a file that never needs them pays for none of them. */
   let utf8: TextDecoder | null = null;
+  let strict: TextDecoder | null = null;
   return {
     decode(bytes: Wc3TextBytes): string {
       const b =
         bytes instanceof Uint8Array ? bytes
         : ArrayBuffer.isView(bytes) ? new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
         : new Uint8Array(bytes);
+
       const bom = b.length >= 3 && b[0] === UTF8_BOM[0] && b[1] === UTF8_BOM[1] && b[2] === UTF8_BOM[2];
-      if (!bom) return plain.decode(b);
-      // The BOM is REMOVED rather than decoded: as `latin1` it is three visible characters and as
-      // `utf-8` it is a U+FEFF that becomes part of whatever key the file opens with. And the
-      // declaration is the whole point — a file that says it is UTF-8 is read AS UTF-8, whatever
-      // codepage this caller would otherwise have used.
-      utf8 ??= new TextDecoder("utf-8");
-      return utf8.decode(b.subarray(3));
+      if (bom) {
+        // The BOM is REMOVED rather than decoded: as `latin1` it is three visible characters and
+        // as `utf-8` it is a U+FEFF that becomes part of whatever key the file opens with. And
+        // the declaration is the whole point — a file that says it is UTF-8 is read AS UTF-8,
+        // whatever codepage this caller would otherwise have used.
+        utf8 ??= new TextDecoder("utf-8");
+        return utf8.decode(b.subarray(3));
+      }
+
+      // No BOM. Most files are pure ASCII, where both codepages agree and the answer is the
+      // same and cheap — only a file that actually has a high byte is worth looking at.
+      if (!hasHighByte(b)) return plain.decode(b);
+
+      // …and of those, one that is valid UTF-8 throughout IS UTF-8 (see the header). The strict
+      // decoder is the test: anything malformed throws, and the codepage keeps the file.
+      strict ??= new TextDecoder("utf-8", { fatal: true });
+      try {
+        const text = strict.decode(b);
+        utf8 ??= new TextDecoder("utf-8");
+        return text;
+      } catch {
+        return plain.decode(b);
+      }
     },
   };
+}
+
+/** Any byte with the top bit set — the only way an 8-bit codepage can differ from ASCII, and the
+ *  precondition for the UTF-8 question being worth asking at all. */
+function hasHighByte(b: Uint8Array): boolean {
+  for (let i = 0; i < b.length; i++) if (b[i] >= 0x80) return true;
+  return false;
 }

@@ -288,10 +288,14 @@ data, or asset behaviour, **consult our sources** and cite what you used.
   of the resource directory and not to the containing one, and the third level is a LEAF. The later
   patches do not apply (they are stated against 1.30.4) — including `MiscGame.txt`, which is
   compiled in and reaches `miscGame()` without the VFS's help, which is what `patchesApply()` is
-  for. And a localized install's text is **UTF-8 with a BOM**: read as windows-1252 the menu is
-  mojibake and, worse, the BOM lands inside the file's FIRST KEY. `wc3TextDecoder` is the one
-  decoder and the rule is the file's own declaration; it is not a general localization fix, and a
-  BOM-less GBK install is still garbled and still unmeasured.
+  for. And a localized install's text is **UTF-8**, announced **two different ways**: a BOM in 56
+  of the 85 CJK-bearing files, and nothing at all in the other 29 — the split runs straight through
+  the object data, so `HumanUnitStrings.txt` read fine while every Night Elf unit was `å°ç²¾çµ`.
+  `wc3TextDecoder` is the one decoder and the rule has both halves: a BOM means UTF-8 (removed, not
+  decoded — decoded, it lands inside the file's FIRST KEY), and no BOM but valid-UTF-8-throughout
+  means UTF-8 too. The second half cannot regress a working install, because a windows-1252 file's
+  high bytes are malformed UTF-8 and fall through. It is not a general localization fix: a GBK
+  install is invalid UTF-8, still garbled, and still unmeasured.
 - **Icons:** read [`docs/icons.md`](docs/icons.md) before touching
   [`src/vfs/derivedArt.ts`](src/vfs/derivedArt.ts), `blpIcon` or an ability's `Art`. An icon is
   the install's, then our own drawn art (`src/patches/art/`), then DERIVED at mount — a missing
