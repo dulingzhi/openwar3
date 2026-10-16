@@ -1,5 +1,6 @@
 import { buildInfoVersion, isCascInstall } from "./casc";
 import type { PickedInstall } from "../assets/opfs";
+import { t } from "../i18n";
 
 // Which Warcraft III an install has to be, and why the answer is not "any of them".
 //
@@ -48,9 +49,10 @@ export const REQUIRED_VERSION = "1.30.4";
  *  `REQUIRED_MPQ_VERSION` in electron/install.mjs; `pnpm app:test` compares them. */
 export const REQUIRED_MPQ_VERSION = "1.27";
 
-/** How the two builds are named to the player. One string, because the messages below and the
- *  load gate's own copy all say it, and three spellings of one requirement read as three. */
-export const PLAYS = `${REQUIRED_VERSION} or ${REQUIRED_MPQ_VERSION}`;
+/** How the two builds are named to the player, in the reader's own language. The numbers are the
+ *  same either way; the word between them is not, which is why this is a translation key rather
+ *  than a template built here (src/i18n.ts). */
+export const plays = (): string => t("version.plays");
 
 /** What to say about a folder that is the wrong build. One sentence, naming BOTH versions, so
  *  the player can see what they have as well as what is wanted. Shared by the load gate and by
@@ -58,8 +60,8 @@ export const PLAYS = `${REQUIRED_VERSION} or ${REQUIRED_MPQ_VERSION}`;
  *  routes and must not word it differently. */
 export const wrongVersionMessage = (version: string | null): string =>
   version
-    ? `That folder is Warcraft III ${version}. OpenWar3 plays ${PLAYS} — every player has to be on the same game data, so this is checked every launch.`
-    : `That folder does not say which Warcraft III it is. OpenWar3 plays ${PLAYS} (The Frozen Throne).`;
+    ? t("version.wrong", { version, plays: plays() })
+    : t("version.unknown", { plays: plays() });
 
 export interface VersionVerdict {
   ok: boolean;
@@ -108,10 +110,7 @@ export function checkVersion(install: PickedInstall): VersionVerdict {
     // Neither a content store nor an archive: not an old Warcraft III, not a Warcraft III at all
     // (or one whose data has gone). "Older than 1.30.4" would send the player to patch a folder
     // that has nothing in it to patch.
-    return refuse(
-      null,
-      `That folder has no Warcraft III game data in it (no Data folder and no game archives). Select the Warcraft III ${PLAYS} folder itself — the one with the game in it.`,
-    );
+    return refuse(null, t("version.noData", { plays: plays() }));
   }
 
   if (casc) {
@@ -128,10 +127,7 @@ export function checkVersion(install: PickedInstall): VersionVerdict {
   const version = install.version;
   if (isRequiredMpqVersion(version)) return { ok: true, version, message: "", data: REQUIRED_MPQ_VERSION };
   if (!version) {
-    return refuse(
-      null,
-      `That folder holds Warcraft III game archives but no readable War3.exe, so OpenWar3 cannot tell which build it is. OpenWar3 plays ${PLAYS} — select the folder the game is installed in, the one with War3.exe in it.`,
-    );
+    return refuse(null, t("version.noExe", { plays: plays() }));
   }
   return refuse(version, wrongVersionMessage(version));
 }

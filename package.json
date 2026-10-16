@@ -9,7 +9,7 @@
     "dev": "vite",
     "dev:log": "node tools/dev-log.mjs",
     "build": "node tools/import-cycle-test.mjs && tsc --noEmit && vite build",
-  "build:host": "node deploy/build-site.mjs",
+    "build:host": "node deploy/build-site.mjs",
     "cycles": "node tools/import-cycle-test.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
@@ -45,7 +45,8 @@
     "relay:test": "node tools/relay-test.mjs && node tools/loopback-test.mjs",
     "loopback:test": "node tools/loopback-test.mjs",
     "pe:test": "tsc -p tools/tsconfig.casc.json && node tools/pe-version-test.mjs",
-    "text:test": "tsc -p tools/tsconfig.casc.json && node tools/wc3-text-test.mjs"
+    "text:test": "tsc -p tools/tsconfig.casc.json && node tools/wc3-text-test.mjs",
+    "i18n:test": "tsc -p tools/tsconfig.casc.json && node tools/i18n-test.mjs"
   },
   "dependencies": {
     "@huggingface/transformers": "4.3.1",

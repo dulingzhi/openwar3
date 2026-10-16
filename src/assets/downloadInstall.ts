@@ -1,5 +1,6 @@
 import { installEntries, readZipIndex, ZipCursor, type InstallEntry } from "../../electron/zip.mjs";
 import { readInstallDir, type DirHandle, type PickedInstall } from "./opfs";
+import { t } from "../i18n";
 
 // "Download game files" (src/ui/gate.ts): the player's own install, zipped and kept somewhere they
 // can reach from a new machine — a Google Drive share, typically — streamed down and unpacked
@@ -79,7 +80,7 @@ async function pageUrl(url: string): Promise<string> {
   const id = /^https:\/\/drive\.usercontent\.google\.com\/download\?id=([\w-]+)/.exec(url)?.[1];
   if (!id) return url;
   if (await driveRelay()) return `/dev-drive?id=${id}`;
-  throw new Error("Google Drive does not let a web page download its files. Use the desktop app, or a direct link to the .zip.");
+  throw new Error(t("dl.driveBlocked"));
 }
 
 export interface DownloadProgress {
@@ -125,10 +126,10 @@ async function rangeReader(url: string, signal?: AbortSignal): Promise<{ size: n
  *  file that is not shared publicly with its sign-in PAGE, which is the usual case. */
 function notAZip(res: Response): string {
   if ((res.headers.get("content-type") ?? "").includes("text/html")) {
-    return "That link opened a web page instead of the file. Make sure it is shared with \"Anyone with the link\".";
+    return t("dl.notAZipPage");
   }
   if (!res.ok) return `The download failed (${res.status}).`;
-  return "That server does not allow resumable downloads, which this needs.";
+  return t("dl.notAZipRange");
 }
 
 /** A ReadableStream as the async iterable ZipCursor walks — written out, since a stream's own
@@ -170,9 +171,9 @@ async function unpack(cursor: ZipCursor, entry: InstallEntry, file: FileSystemFi
     await piped;
   } else {
     await out.abort();
-    throw new Error(`${entry.path} is packed with a method this cannot unpack (${entry.method}).`);
+    throw new Error(t("dl.packed", { path: entry.path, method: entry.method }));
   }
-  if ((await file.getFile()).size !== entry.uncompressedSize) throw new Error(`${entry.path} did not unpack whole.`);
+  if ((await file.getFile()).size !== entry.uncompressedSize) throw new Error(t("dl.notWhole", { path: entry.path }));
 }
 
 /**
@@ -183,16 +184,16 @@ async function unpack(cursor: ZipCursor, entry: InstallEntry, file: FileSystemFi
  */
 export async function downloadInstall(link: string, onProgress: (p: DownloadProgress) => void, signal?: AbortSignal): Promise<void> {
   const direct = downloadUrl(link);
-  if (!direct) throw new Error("That is not a link.");
+  if (!direct) throw new Error(t("dl.notALink"));
   const url = await pageUrl(direct);
-  if (!navigator.storage?.getDirectory) throw new Error("This browser cannot store the game files. Try Chrome or Edge.");
+  if (!navigator.storage?.getDirectory) throw new Error(t("dl.noStorage"));
 
   const { size, read } = await rangeReader(url, signal);
   const entries = installEntries(await readZipIndex(read, size)).filter((e) => wanted(e.path));
   const need = entries.reduce((sum, e) => sum + e.uncompressedSize, 0);
   const { usage, quota } = (await navigator.storage.estimate?.()) ?? {};
   if (quota && need > quota - (usage ?? 0)) {
-    throw new Error(`Not enough browser storage: the game files need ${gb(need)} and ${gb(quota - (usage ?? 0))} is free.`);
+    throw new Error(t("dl.quota", { need: gb(need), free: gb(quota - (usage ?? 0)) }));
   }
 
   const opfs = await navigator.storage.getDirectory();

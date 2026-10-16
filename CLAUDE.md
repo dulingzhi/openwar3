@@ -972,6 +972,21 @@ data, or asset behaviour, **consult our sources** and cite what you used.
   NAME TAGS ("Fiend 4", a number per unit for life, shown only with two or more of a kind) so a
   body can be said, and "," toggles a hint box; an order spoken to an army rides the camera on
   its first hero. "Gather" asks the sim's worker profile, never "is it a worker" (the Ghoul).
+- **Our own words:** read [`src/i18n.ts`](src/i18n.ts) before adding a string to a screen. Everything
+  past the load gate is the INSTALL's language — menus, tooltips, unit names and sounds all come
+  out of the player's own Warcraft III, so a Chinese install is a Chinese game with no work from
+  us. The gate is the exception by construction: it runs BEFORE an install is mounted, so there is
+  nothing to read the words out of, and it is the one screen where OpenWar3 supplies the text —
+  which is why the version refusals (`vfs/version.ts`) and the download failures
+  (`assets/downloadInstall.ts`) live in the same table as the gate's own. The language follows the
+  BROWSER, not the install: that is all that can be known when the screen appears, and it settles
+  the case the install could not (an English install behind a Chinese browser gets a gate it can
+  read and then a game in the language it was bought in). English is the key set; a missing
+  translation is a `Record<Key, string>` compile error rather than an English line mid-screen.
+  `?lang=` overrides, and is how a translation is reviewed at all without changing an OS setting.
+  Adding a language is one table in `TABLES` — `zh` covers `zh-TW` for now, and a Traditional
+  table is the next entry, not a refactor. `pnpm i18n:test` drives the detection branches headlessly
+  (a screenshot with `?lang=zh` proves the TABLE, not that a Chinese browser switches on its own).
 - **Never edit the install's UI files.** `UI\FrameDef\` is the player's. A control OpenWar3 needs
   that the 2003 UI has no frame for goes in [`src/overrides/`](src/overrides/) — our own FrameDef
   files, layered onto the screen at mount through `mountFdfScreen`'s `overrides` option — and its
