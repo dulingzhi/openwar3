@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { existsSync } from "node:fs";
 import { startServer } from "./server.mjs";
-import { installVersion, looksLikeInstall, serveInstall, writeCustomKeys, REQUIRED_VERSION } from "./install.mjs";
+import { installVersion, looksLikeInstall, serveInstall, writeCustomKeys, REQUIRED_VERSION, REQUIRED_MPQ_VERSION } from "./install.mjs";
 import { downloadInstall } from "./download.mjs";
 import { detectInstall } from "./locate.mjs";
 import { startBeacon } from "./beacon.mjs";
@@ -258,7 +258,7 @@ app.whenReady().then(async () => {
         if (!event.sender.isDestroyed()) event.sender.send("ow3:install-download-progress", progress);
       }, downloadAbort.signal);
       if (!looksLikeInstall(folder)) {
-        throw new Error(`The download finished, but ${folder} is not Warcraft III ${REQUIRED_VERSION}.`);
+        throw new Error(`The download finished, but ${folder} is not Warcraft III ${REQUIRED_VERSION} or ${REQUIRED_MPQ_VERSION}.`);
       }
       writeSettings({ installPath: folder });
       return folder;
@@ -326,12 +326,15 @@ app.whenReady().then(async () => {
   // Three different pieces of news, said as three: it is there, it is gone, or it is there and
   // is the wrong Warcraft III (src/vfs/version.ts). The screen draws the same distinction.
   console.log(install.valid
-    ? `[OpenWar3] install: ${install.path} (${install.version})`
+    // `valid` with NO version can only be the MPQ era: the content-store branch answers a version
+    // or refuses the folder, so a valid folder that does not name a build is one whose build lives
+    // in `War3.exe`'s resource table and is the RENDERER's to read (src/vfs/version.ts).
+    ? `[OpenWar3] install: ${install.path} (${install.version ?? "an MPQ-era install (~1.27)"})`
     : !install.path
       ? "[OpenWar3] no install remembered — the game will ask for it"
       : !install.present
         ? `[OpenWar3] install: ${install.path} — NOT FOUND, the game will ask for it`
-        : `[OpenWar3] install: ${install.path} is ${install.version ?? "an unknown version"}, not ${REQUIRED_VERSION} — the game will ask for another`);
+        : `[OpenWar3] install: ${install.path} is ${install.version ?? "an unknown version"}, not ${REQUIRED_VERSION} or ${REQUIRED_MPQ_VERSION} — the game will ask for another`);
 
   // Announce this game on the subnet and listen for others (electron/beacon.mjs). This is the
   // half of LAN play a page cannot do at all, and it is why the export is native: with it,

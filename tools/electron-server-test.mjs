@@ -6,7 +6,7 @@
 // it; this is verified by a test.
 
 import { startServer } from "../electron/server.mjs";
-import { looksLikeInstall, serveInstall, installVersion, REQUIRED_VERSION } from "../electron/install.mjs";
+import { looksLikeInstall, serveInstall, installVersion, REQUIRED_VERSION, REQUIRED_MPQ_VERSION } from "../electron/install.mjs";
 import { detectInstall } from "../electron/locate.mjs";
 import { mkdirSync, writeFileSync, rmSync, readFileSync } from "node:fs";
 import { PROTOCOL_VERSION } from "../server/rooms.mjs";
@@ -85,11 +85,17 @@ try {
     const declared = /REQUIRED_VERSION\s*=\s*"([^"]+)"/.exec(ts)?.[1];
     ok("the shell asks for the same version the game does", declared === REQUIRED_VERSION,
        `install.mjs ${REQUIRED_VERSION}, version.ts ${declared}`);
+    // …and the same for the MPQ era, which is a second accepted build rather than a second rule.
+    const declaredMpq = /REQUIRED_MPQ_VERSION\s*=\s*"([^"]+)"/.exec(ts)?.[1];
+    ok("…and the same MPQ-era version", declaredMpq === REQUIRED_MPQ_VERSION,
+       `install.mjs ${REQUIRED_MPQ_VERSION}, version.ts ${declaredMpq}`);
     // The Windows installer asks the same question before it will install anywhere
     // (packaging/windows-installer.nsh), in NSIS, where it cannot import either file.
     const nsh = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "packaging", "windows-installer.nsh"), "utf8");
     const installer = /!define OW3_REQUIRED_VERSION "([^"]+)"/.exec(nsh)?.[1];
     ok("…and so does the Windows installer", installer === REQUIRED_VERSION, `windows-installer.nsh ${installer}`);
+    const installerMpq = /!define OW3_REQUIRED_MPQ_VERSION "([^"]+)"/.exec(nsh)?.[1];
+    ok("…and for the MPQ era too", installerMpq === REQUIRED_MPQ_VERSION, `windows-installer.nsh ${installerMpq}`);
 
     const tmp = join(process.env.TMPDIR ?? "/tmp", `ow3-version-test-${process.pid}`);
     const build = (version) => {
@@ -111,6 +117,25 @@ try {
       ok("a different build number of the same version still passes", looksLikeInstall(tmp));
       rmSync(join(tmp, ".build.info"));
       ok("a folder that says nothing is refused", !looksLikeInstall(tmp));
+
+      // THE MPQ ERA, which this side can only judge by SHAPE: the build lives in `War3.exe`'s PE
+      // resource table and there is no reader for that here (src/vfs/peVersion.ts owns the only
+      // one). What must hold is that the shell accepts a folder the mount could actually use and
+      // refuses everything less, so a folder the game will refuse is at worst remembered once.
+      // Its own directory: `tmp` is a CONTENT STORE by now, and a folder with a `Data/` is
+      // judged as one (which the last check here pins).
+      const mpq = join(tmp, "mpq-era");
+      mkdirSync(mpq, { recursive: true });
+      ok("an MPQ folder with no game executable is refused", !looksLikeInstall(mpq));
+      writeFileSync(join(mpq, "War3.exe"), "");
+      ok("…with the executable but no archives, still refused", !looksLikeInstall(mpq));
+      writeFileSync(join(mpq, "war3.mpq"), "");
+      ok("the game executable and an archive is accepted", looksLikeInstall(mpq));
+      // A content store outranks the shape rule: a folder that HAS a `Data/` is judged on its
+      // `.build.info`, so a wrong-version CASC install is not rescued by holding an old exe.
+      mkdirSync(join(mpq, "Data"), { recursive: true });
+      writeFileSync(join(mpq, ".build.info"), "Branch!STRING:0|Active!DEC:1|Version!STRING:0\neu|1|1.29.2.9231\n");
+      ok("…but a content store is still judged on its own version", !looksLikeInstall(mpq), installVersion(mpq));
       // The installer puts the app INSIDE the game folder, so a packaged app finds the install
       // from where its own executable sits (electron/locate.mjs) — and an unpackaged one, run
       // out of node_modules, must not go looking there.

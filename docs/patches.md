@@ -315,7 +315,10 @@ edition overlay uses — so no reader has to know a patch exists.
   compiled in, so `miscGame()` asks the chain for the same rows (`patchedMiscGame`) on the same
   corner — which is how 1.35.0's `ReviveTimeFactor` and 2.0.3's Piercing-vs-Heavy reach the sim.
 - **A 1.30.4 store only** (vfs/loader.ts). The values are stated against 1.30.4; an MPQ-era
-  install is older.
+  install is older. `MiscGame.txt` is the exception that proves the rule needs stating twice: it
+  is COMPILED IN (`src/data/gameplayConstants.ts`), so its edits reach `miscGame()` without the
+  VFS's help — `patchesApply()` (src/patches/index.ts, set by `loadProfile`) is what keeps a 1.27
+  match off 2.0.x's damage table (`docs/versions.md`).
 - **Always the latest.** `setPatchLevel()` rolls the chain back to any release, for developers
   only — tests, `?dev&patch=1.32.10` — and nothing a player can reach.
 - **No Blizzard text.** A value is a number, an id, a path or our own words. A number a tooltip

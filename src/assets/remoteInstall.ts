@@ -1,3 +1,4 @@
+import { wc3TextDecoder } from "../vfs/text";
 import type { ByteReader, CascFiles } from "../vfs/casc";
 
 // An install read over URLs rather than off a picked folder.
@@ -54,7 +55,7 @@ export const fetchInstallText = async (url: FileUrl, path: string): Promise<stri
  *  and wrong for anything carrying a localized tooltip (assets/opfs.ts `readAnsi` is the picker's
  *  half of the same rule). */
 export const fetchInstallAnsi = async (url: FileUrl, path: string): Promise<string> =>
-  new TextDecoder("windows-1252").decode(await fetchInstallBytes(url, path));
+  wc3TextDecoder().decode(await fetchInstallBytes(url, path));
 
 /**
  * A `data.NNN` read in ranges instead of whole. Both servers honour `Range`, so the mount slices

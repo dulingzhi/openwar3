@@ -3,6 +3,9 @@ dist/
 *.local
 .DS_Store
 .vscode/
+
+# Screenshots taken while checking a change against the running game (dev only, never shipped)
+.shots/
 # Never commit Blizzard assets (see plan §0)
 Warcraft III 1.30.4/
 Warcraft III/

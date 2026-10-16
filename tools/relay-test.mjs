@@ -13,6 +13,7 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { readFileSync } from "node:fs";
 import WebSocket from "ws";
 
@@ -125,6 +126,9 @@ try {
   host.send({
     t: "create", name: "Test Game", playerName: "Host",
     mapName: "Echo Isles", mapPath: MAP_PATH, maxPlayers: 2,
+    // Which Warcraft III build this game is played on (src/vfs/version.ts `gameData`). The relay
+    // compares it against a joiner's and refuses a mismatch — see the gate section below.
+    gameData: "1.30.4",
   });
   const created = await host.next("created");
   check("host is peer 1 and flagged host", created.you.id === 1 && created.you.host === true);
@@ -133,6 +137,7 @@ try {
   // The PATH is what a joiner resolves in its own install; the map file never crosses the
   // wire (src/net/protocol.ts RoomInfo.mapPath). A room without it is unjoinable.
   check("room carries the map path", created.room.mapPath === MAP_PATH);
+  check("room carries the build it is played on", created.room.gameData === "1.30.4", String(created.room.gameData));
 
   console.log("joiner sees the game and joins");
   const joiner = client("joiner");
@@ -147,6 +152,25 @@ try {
   check("joiner sees both peers", joined.peers.length === 2);
   const peerJoin = await host.next("peer-join");
   check("host is told the peer joined", peerJoin.peer.name === "Joiner");
+
+  // THE GAME-DATA GATE: the one thing this relay compares between two clients, and the reason it
+  // is not merely a field it forwards. A 1.27 install and a 1.30.4 one are two different games —
+  // the same unit ids and not the same units — and NOTHING downstream would ever notice: the
+  // authority resolves orders against its own tables and each client draws its own, so a mixed
+  // match is not an error anyone sees, it is two players quietly playing different games. So a
+  // joiner on another build is refused at the door, and refused before a seat is handed out.
+  console.log("a game on another Warcraft III build refuses the join");
+  const stranger = client("stranger");
+  await stranger.open();
+  await stranger.next("hello");
+  const before = await roomsNow(stranger);
+  check("the listing says which build the game is on", before.rooms[0].gameData === "1.30.4", String(before.rooms[0].gameData));
+  const seats = before.rooms[0].players;
+  stranger.send({ t: "join", roomId: before.rooms[0].id, playerName: "Stranger", gameData: "1.27" });
+  const refused = await stranger.next("error");
+  check("the refusal names both builds", refused.message.includes("1.30.4") && refused.message.includes("1.27"), refused.message);
+  const afterRefusal = await roomsNow(stranger);
+  check("…and no seat was taken", afterRefusal.rooms[0].players === seats, `${seats} → ${afterRefusal.rooms[0].players}`);
 
   console.log("opaque game traffic");
   host.send({ t: "relay", data: { hello: "world" } });
@@ -236,7 +260,7 @@ try {
     // racing the rejoin checks above against it. A dropped player who never comes back must
     // become a player who LEFT — the host hears `peer-leave` exactly as for a chosen leave, and
     // that is the only thing that ever raises the map's EVENT_PLAYER_LEAVE for them.
-    const { RelayCore } = await import(join(REPO, "server", "rooms.mjs"));
+    const { RelayCore } = await import(pathToFileURL(join(REPO, "server", "rooms.mjs")).href);
     const core = new RelayCore({ holdMs: 150 });
     const conn = () => { const c = { got: [], send: (m) => c.got.push(m) }; core.connect(c); return c; };
     const hostC = conn();

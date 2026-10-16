@@ -1,3 +1,4 @@
+import { wc3TextDecoder } from "./text";
 import { decodeBlte } from "./blte";
 import { type DataSource, type LoadProgress, normalizeMpqPath } from "./types";
 
@@ -332,7 +333,7 @@ export class CascDataSource implements DataSource {
     const rootCKey = (build.get("root") ?? "").split(" ")[0];
     const rootEKey = encoding.get(rootCKey);
     if (!rootEKey) throw new Error("the encoding table has no entry for the root file");
-    const rootText = new TextDecoder("latin1").decode(
+    const rootText = wc3TextDecoder("latin1").decode(
       await source.readLocation(index.get(rootEKey.slice(0, INDEX_KEY_HEX)), "root"),
     );
 

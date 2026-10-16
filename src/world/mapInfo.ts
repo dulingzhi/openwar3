@@ -1,3 +1,4 @@
+import { wc3TextDecoder } from "../vfs/text";
 import { MpqDataSource } from "../vfs/mpq";
 import { readW3i } from "../compat/w3i";
 import { readMapFormat, UNKNOWN_FORMAT, type MapFormatProfile } from "../compat/mapFormat";
@@ -206,7 +207,7 @@ export function parseMapInfo(bytes: Uint8Array, fallbackName: string): MapInfo {
   // UTF-8 (with a BOM) — read as latin1, the BOM turns into three stray characters glued to
   // the first "STRING 0" header, and the map's NAME is the one entry that fails to parse.
   const wtsBytes = mpq.rawBytes("war3map.wts");
-  const strings = wtsBytes ? parseWts(new TextDecoder("utf-8").decode(wtsBytes)) : new Map<number, string>();
+  const strings = wtsBytes ? parseWts(wc3TextDecoder("utf-8").decode(wtsBytes)) : new Map<number, string>();
   const customForces = (info.flags & W3I_USE_CUSTOM_FORCES) !== 0;
   // Player TYPE: 1 = user (a human may take the slot), 2 = computer (the map's own AI),
   // 3 = neutral, 4 = rescuable. The first two are seated in the lobby — Monolith's creeps get

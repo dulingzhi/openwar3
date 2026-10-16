@@ -49,19 +49,33 @@ export interface RoomInfo {
    *  an older relay or host, and read as Fast then. The MATCH takes its speed from `start`'s
    *  `advanced`, never from this. */
   speed?: number;
+  /**
+   * Which Warcraft III the host's own install is — `"1.30.4"` or `"1.27"` (src/vfs/version.ts
+   * `gameData`). The LOAD-BEARING half of the two, and the reason it is a different field from
+   * `edition`: an edition is a table set inside ONE install, and this is a different install
+   * altogether. A 1.27 Footman and a 1.30.4 Footman are the same id and not the same unit, and
+   * nothing downstream would notice — the authority resolves orders against its own tables and
+   * each client draws its own, so a mixed match is not an error anyone sees, it is two players
+   * quietly playing different games.
+   *
+   * The relay REFUSES a join whose label differs from the room's (server/rooms.mjs), which is why
+   * this field, unlike `edition`, is enforced rather than merely filtered in the game list.
+   */
+  gameData?: string;
 }
 
 // --- client → relay ---------------------------------------------------------------
 
 export type ClientMessage =
   /** Announce a game. The sender becomes the room's host, hence its authority. */
-  | { t: "create"; name: string; playerName: string; mapName: string; mapPath: string; maxPlayers: number; observers?: boolean; edition?: "roc" | "tft"; speed?: number }
+  | { t: "create"; name: string; playerName: string; mapName: string; mapPath: string; maxPlayers: number; observers?: boolean; edition?: "roc" | "tft"; speed?: number; gameData?: string }
   /** Ask for the game list. The relay also pushes `rooms` unprompted when it changes. */
   | { t: "list" }
   /** Join a room. `token` is a REJOIN token from an earlier `created`/`joined` in this room —
    *  present it to reclaim the same slot after a dropped connection (Phase E item 11). Absent
-   *  for a first-time join. */
-  | { t: "join"; roomId: string; playerName: string; token?: string }
+   *  for a first-time join. `gameData` is this machine's own install version; a room whose label
+   *  differs REFUSES the join (RoomInfo.gameData). */
+  | { t: "join"; roomId: string; playerName: string; token?: string; gameData?: string }
   | { t: "leave" }
   /** Opaque game traffic. `to` omitted = everyone else in the room. */
   | { t: "relay"; to?: number; data: unknown };
@@ -167,7 +181,7 @@ export type GameMessage =
 
 /** Bumped whenever the shapes above change incompatibly; the client refuses a mismatch
  *  rather than failing in a confusing way three messages later. */
-export const PROTOCOL_VERSION = 13; // 13: observers, colours, advanced options — 12: per-slot AI difficulty
+export const PROTOCOL_VERSION = 14; // 14: the game-data label a room is played on — 13: observers, colours, advanced options
 
 /**
  * What the relay knows about ITS OWN reachability, sent with the handshake.

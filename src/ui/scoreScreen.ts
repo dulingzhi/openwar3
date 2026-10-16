@@ -1,3 +1,4 @@
+import { wc3TextDecoder } from "../vfs/text";
 import { blpToCanvas } from "../render/blputil";
 import { ScoreScreenScene, type ScoreBar } from "../render/scoreScreenScene";
 import { ALLY_FILTER_COLOR } from "../game/allyColor";
@@ -168,7 +169,7 @@ export async function mountScoreScreen(opts: ScoreScreenOptions): Promise<ScoreS
   const { vfs, table } = opts;
   const skins = (() => {
     const bytes = vfs.rawBytes(WAR3SKINS);
-    return bytes ? parseWar3Skins(new TextDecoder("latin1").decode(bytes)) : new Map<string, Map<string, string>>();
+    return bytes ? parseWar3Skins(wc3TextDecoder("latin1").decode(bytes)) : new Map<string, Map<string, string>>();
   })();
   const skin = (section: string, key: string): string | undefined => skinValue(skins, section, key);
 
@@ -333,7 +334,7 @@ export async function mountScoreScreen(opts: ScoreScreenOptions): Promise<ScoreS
 export function scoreScreenMusic(vfs: DataSource, table: ScoreTable, localPlayer: number | null): string | null {
   const bytes = vfs.rawBytes(WAR3SKINS);
   if (!bytes) return null;
-  const skins = parseWar3Skins(new TextDecoder("latin1").decode(bytes));
+  const skins = parseWar3Skins(wc3TextDecoder("latin1").decode(bytes));
   const me = table.rows.find((r) => r.player === localPlayer) ?? table.rows.find((r) => r.won) ?? null;
   const section = me ? SKIN[me.race] : "Default";
   const key = (me?.won ? "VictoryMusic" : "DefeatMusic") + skinVersionSuffix();

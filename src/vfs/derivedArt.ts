@@ -1,3 +1,4 @@
+import { wc3TextDecoder } from "./text";
 import type { DataSource } from "./types";
 import { BlpImage } from "mdx-m3-viewer/dist/cjs/parsers/blp/image";
 import { encodeBlp } from "../assets/blpEncode";
@@ -165,7 +166,7 @@ export class DerivedArtDataSource implements DataSource {
       for (const table of tables) {
         const bytes = this.base.rawBytes(table);
         if (!bytes) continue;
-        const text = new TextDecoder("windows-1252").decode(bytes);
+        const text = wc3TextDecoder().decode(bytes);
         for (const m of text.matchAll(/[A-Za-z0-9_\\/]*PASBTN[A-Za-z0-9_]+\.blp/gi)) named.add(m[0]);
       }
     }

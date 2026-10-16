@@ -13,7 +13,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "data:extract": "tsc -p tools/tsconfig.casc.json && node --max-old-space-size=8192 tools/extract-data.mjs",
-    "casc:test": "tsc -p tools/tsconfig.casc.json && node --max-old-space-size=8192 tools/casc-test.cjs",
+    "casc:test": "tsc -p tools/tsconfig.casc.json && node --max-old-space-size=8192 tools/casc-test.cjs && node tools/pe-version-test.mjs && node tools/wc3-text-test.mjs",
     "data:build": "node tools/build-data-browser.mjs",
     "data:browse": "node tools/build-data-browser.mjs --open",
     "data:verify": "node tools/verify-gameplay-constants.mjs",
@@ -42,7 +42,9 @@
     "relay": "node server/relay.mjs",
     "relay-kill": "node server/relay-kill.mjs",
     "relay:test": "node tools/relay-test.mjs && node tools/loopback-test.mjs",
-    "loopback:test": "node tools/loopback-test.mjs"
+    "loopback:test": "node tools/loopback-test.mjs",
+    "pe:test": "tsc -p tools/tsconfig.casc.json && node tools/pe-version-test.mjs",
+    "text:test": "tsc -p tools/tsconfig.casc.json && node tools/wc3-text-test.mjs"
   },
   "dependencies": {
     "@huggingface/transformers": "4.3.1",

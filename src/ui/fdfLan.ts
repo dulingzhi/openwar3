@@ -1,6 +1,7 @@
 import type { DataSource } from "../vfs/types";
 import { edition } from "../data/edition";
 import { gameSpeedLabel, toGameSpeed } from "../data/gameSpeed";
+import { gameData } from "../vfs/version";
 import type { MapInfo } from "../world/mapInfo";
 import type { MapPreview } from "../world/mapPreview";
 import type { FdfFrame } from "./fdf/parser";
@@ -205,7 +206,13 @@ export async function mountLanScreen(
     const list = s.list("MapListBox");
     // Only games on THIS client's edition: a Reign of Chaos match and an expansion one read
     // different object tables and cannot be joined across (src/net/protocol.ts RoomInfo.edition).
-    st = { ...st, rooms: st.rooms.filter((r) => (r.edition ?? "tft") === edition()) };
+    // …and only games on THIS client's Warcraft III build, for the same reason one era down: a
+    // 1.27 install and a 1.30.4 one are two different games. The relay would refuse the join
+    // anyway, so offering it would be offering a button that cannot work.
+    let rooms = st.rooms.filter((r) => (r.edition ?? "tft") === edition());
+    const elsewhere = rooms.filter((r) => r.gameData && r.gameData !== gameData()).length;
+    rooms = rooms.filter((r) => !r.gameData || r.gameData === gameData());
+    st = { ...st, rooms };
     // A row is the game's name and its seats, "(1/2)", in the same face as the name and in the
     // LABEL gold the screen's own captions wear (StandardLabelTextTemplate's 0.99 0.827 0.0705)
     // — and, for a game that takes observers, the game's own GAMELIST_OBSERVERS " (observers)".
@@ -247,7 +254,12 @@ export async function mountLanScreen(
               ? `|cffff8080You do not have ${missing}. You cannot join this game.|r`
           : st.rooms.length
             ? "Select a game and choose Join."
-            : "No games found. Create one.",
+            // A game hidden for being on the other build is NAMED, because an empty list with no
+            // explanation is the one thing a player cannot act on: they go looking for a network
+            // problem that is not there. (The Join refusal says the same thing in full.)
+            : elsewhere
+              ? `|cffff8080${elsewhere} game${elsewhere === 1 ? " is" : "s are"} here on another Warcraft III build. You cannot join ${elsewhere === 1 ? "it" : "them"}.|r`
+              : "No games found. Create one.",
       );
     }
 

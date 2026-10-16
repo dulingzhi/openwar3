@@ -1,3 +1,4 @@
+import { wc3TextDecoder } from "../vfs/text";
 import type { DataSource } from "../vfs/types";
 import type { Race } from "./races";
 
@@ -67,7 +68,7 @@ export const LOAD_BAR_MODEL = "UI\\Glues\\Loading\\LoadBar\\LoadBar.mdx";
 /** Read `[LoadingScreens]` out of the mounted install. Returns [] if the file is absent. */
 export async function loadLoadingScreens(vfs: DataSource): Promise<LoadingScreenDef[]> {
   if (!vfs.exists(WORLD_EDIT_DATA)) return [];
-  return parseLoadingScreens(new TextDecoder("latin1").decode(await vfs.read(WORLD_EDIT_DATA)));
+  return parseLoadingScreens(wc3TextDecoder("latin1").decode(await vfs.read(WORLD_EDIT_DATA)));
 }
 
 /** The parse itself, split out so it can be run over the raw file headlessly. */

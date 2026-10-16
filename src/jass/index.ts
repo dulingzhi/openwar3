@@ -8,6 +8,7 @@
 // stays engine-agnostic. Everything here is best-effort: a missing library or a
 // script error must never crash the match (CLAUDE.md "safe default").
 
+import { wc3TextDecoder } from "../vfs/text";
 import type { DataSource } from "../vfs/types";
 import type { MpqDataSource } from "../vfs/mpq";
 import { buildInterpreter } from "./headless";
@@ -16,9 +17,9 @@ import type { EngineHooks, LobbySlot, MapSetup } from "./runtime";
 import { COMPAT_PRELUDE } from "../compat/prelude";
 import { createLuaMapScript, type LuaMapScript } from "../compat/lua/index";
 
-const decode = (b: Uint8Array): string => new TextDecoder("windows-1252").decode(b);
+const decode = (b: Uint8Array): string => wc3TextDecoder().decode(b);
 // war3map.wts is UTF-8 (with a BOM); decode it as such so authored text isn't mojibake.
-const decodeUtf8 = (b: Uint8Array): string => new TextDecoder("utf-8").decode(b);
+const decodeUtf8 = (b: Uint8Array): string => wc3TextDecoder("utf-8").decode(b);
 
 function readScript(vfs: DataSource | MpqDataSource, ...paths: string[]): string | null {
   for (const p of paths) {

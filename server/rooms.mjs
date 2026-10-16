@@ -25,7 +25,7 @@
 // therefore not a degraded lobby, it is no lobby at all: 12 landed on the client alone once and
 // every LAN game died at "Connection to the game host was lost." `pnpm relay:test` now reads
 // protocol.ts and compares, so the next bump that forgets this line fails a test instead.
-export const PROTOCOL_VERSION = 13; // 13: observers, colours, advanced options — 12: per-slot AI difficulty
+export const PROTOCOL_VERSION = 14; // 14: the game-data label a room is played on — 13: observers, colours, advanced options
 
 /** The game list entry, as LocalMultiplayerJoin.fdf wants it. */
 const roomInfo = (r) => ({
@@ -45,6 +45,11 @@ const roomInfo = (r) => ({
   edition: r.edition,
   // The host's Game Speed rung (src/data/gameSpeed.ts), for the join screen's "Game Speed:" row.
   speed: r.speed,
+  // Which Warcraft III BUILD the host is on ("1.30.4" or "1.27"). Also passed through, and the
+  // one label this relay acts on rather than merely forwards: `join` refuses a mismatch, because
+  // a 1.27 and a 1.30.4 client disagree about what every unit in the game is and neither would
+  // ever see an error. Still nothing about Warcraft III itself — two strings, compared.
+  gameData: r.gameData ?? undefined,
 });
 
 const peerInfo = (p) => ({ id: p.id, name: p.name, host: p.host });
@@ -210,6 +215,10 @@ export class RelayCore {
           edition: msg.edition === "roc" ? "roc" : "tft",
           // 0 Slow … 3 Fastest; anything else (an older client's silence) is Fast, 2.
           speed: Number.isInteger(msg.speed) && msg.speed >= 0 && msg.speed <= 3 ? msg.speed : 2,
+          // The build this game is played on, as the host's own install reported it. A string
+          // the relay compares and never interprets (see `roomInfo`); null when a client did not
+          // say, which is admitted rather than refused.
+          gameData: typeof msg.gameData === "string" ? msg.gameData : null,
           peers: new Map([[peer.id, peer]]),
           nextPeerId: 2,
         };
@@ -225,6 +234,23 @@ export class RelayCore {
         if (conn.roomId) return conn.send({ t: "error", message: "Already in a game." });
         const room = this.rooms.get(msg.roomId);
         if (!room) return conn.send({ t: "error", message: "That game is no longer available." });
+
+        // THE GAME-DATA GATE, and the one place two clients' installs are ever compared. A room
+        // is played on the build its host holds; a joiner on another build is refused HERE,
+        // before a seat is handed out, because nothing later would notice — the authority would
+        // resolve orders against its own tables and the client would draw its own, and the two
+        // would disagree about what a Footman is without either side raising anything.
+        //
+        // Asked of a REJOIN too (`held` is below): a player who patched Warcraft III between
+        // dropping out and coming back is a player on different data, however they got here.
+        // Two absent labels are admitted — the relay compares what it is given and invents
+        // nothing — but with `PROTOCOL_VERSION` 14 both ends always state one.
+        if (room.gameData && typeof msg.gameData === "string" && msg.gameData !== room.gameData) {
+          return conn.send({
+            t: "error",
+            message: `That game is being played on Warcraft III ${room.gameData}; your install is ${msg.gameData}. Every player has to be on the same game data.`,
+          });
+        }
 
         // RECONNECT (item 11): a `token` matching a slot this room is HOLDING for a dropped
         // player reclaims that exact slot — same peer id, same token — rather than minting a

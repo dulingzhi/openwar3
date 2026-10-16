@@ -1,3 +1,4 @@
+import { wc3TextDecoder } from "../vfs/text";
 import War3MapViewer from "mdx-m3-viewer/dist/cjs/viewer/handlers/w3x/viewer";
 import { dataSetFolder, isRoc } from "../data/edition";
 import ModelViewer from "mdx-m3-viewer/dist/cjs/viewer/viewer";
@@ -2641,7 +2642,7 @@ export class MapViewerScene {
 
   private slkText(path: string): string {
     const bytes = this.vfs.rawBytes(path);
-    return bytes ? new TextDecoder("windows-1252").decode(bytes) : "";
+    return bytes ? wc3TextDecoder().decode(bytes) : "";
   }
 
   /** Shared match bring-up for both melee and custom starts: pick the local
@@ -3945,7 +3946,7 @@ export class MapViewerScene {
     const bytes = this.mapArchive?.rawBytes(MAP_MISC_FILE);
     if (!bytes) return;
     try {
-      this.mapMisc = parseMapMisc(new TextDecoder("latin1").decode(bytes));
+      this.mapMisc = parseMapMisc(wc3TextDecoder("latin1").decode(bytes));
     } catch (err) {
       console.warn(`[jass] ${MAP_MISC_FILE} failed (non-fatal):`, err);
       return;
@@ -3997,7 +3998,7 @@ export class MapViewerScene {
     try {
       // The World Editor writes this file as UTF-8, like war3map.wts beside it.
       const wts = this.mapArchive?.rawBytes("war3map.wts") ?? undefined;
-      this.mapSkin = parseMapSkin(new TextDecoder("utf-8").decode(bytes), makeTrigStr(wts));
+      this.mapSkin = parseMapSkin(wc3TextDecoder("utf-8").decode(bytes), makeTrigStr(wts));
     } catch (err) {
       console.warn(`[jass] ${MAP_SKIN_FILE} failed (non-fatal):`, err);
       return;
@@ -5966,7 +5967,7 @@ export class MapViewerScene {
     }
     if (this.cellRarity === undefined) {
       const bytes = this.vfs.rawBytes("UI\\WorldEditData.txt");
-      this.cellRarity = bytes ? parseCellRarity(new TextDecoder("windows-1252").decode(bytes)) : null;
+      this.cellRarity = bytes ? parseCellRarity(wc3TextDecoder().decode(bytes)) : null;
     }
     const rng = this.mapScript?.interp.rt.random ?? Math.random;
     const pending = this.tileLoads.get(k);
@@ -8106,7 +8107,7 @@ export class MapViewerScene {
       for (const file of ["UI\\WorldEditStrings.txt", "UI\\WorldEditGameStrings.txt"]) {
         const bytes = this.vfs.rawBytes(file);
         if (!bytes) continue;
-        for (const line of new TextDecoder("windows-1252").decode(bytes).split(/\r?\n/)) {
+        for (const line of wc3TextDecoder().decode(bytes).split(/\r?\n/)) {
           const eq = line.indexOf("=");
           if (eq > 0 && line.startsWith("WESTRING")) {
             this.worldEditStrings.set(line.slice(0, eq).trim(), line.slice(eq + 1).trim().replace(/^"|"$/g, ""));
@@ -10650,7 +10651,7 @@ export class MapViewerScene {
   private skinPath(key: string): string {
     if (!this.skins) {
       const bytes = this.vfs.rawBytes(WAR3SKINS);
-      this.skins = bytes ? parseWar3Skins(new TextDecoder("latin1").decode(bytes)) : new Map();
+      this.skins = bytes ? parseWar3Skins(wc3TextDecoder("latin1").decode(bytes)) : new Map();
     }
     const value = skinValue(this.skins, SKIN_SECTION[this.localRace], key) ?? key;
     return /\.[a-z]{3,4}$/i.test(value) ? value : `${value}.blp`;

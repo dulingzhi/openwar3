@@ -148,6 +148,17 @@ Three rules it lives by, each of which is a way to lose every game on it:
   the wire (`tools/sim-wire-test.cjs`: 240 units + 60 projectiles = 45 KB), so at 60 Hz a non-host
   player costs roughly 4–12 Mbit/s — and so does the host's upload, per player.
 
+**One thing about a room is the relay's own to judge, not to pass on: which Warcraft III its host
+is playing.** Two supported builds exist — 1.30.4 and 1.27 (`docs/versions.md`) — and a 1.27 and a
+1.30.4 client agree about every unit ID and disagree about every unit. Nothing downstream would
+notice: the authority resolves orders against its own tables and each client draws its own. So
+`create` and `join` carry a `gameData` label, `RoomInfo` echoes it, and the relay REFUSES a join
+whose label differs — before a seat is handed out, and for a reconnect too, since a player who
+patched between dropping out and coming back is a player on different data however they got here
+(`PROTOCOL_VERSION` 14, `server/rooms.mjs`). It is the one field there the relay acts on; the label
+itself is two strings, and it is `src/vfs/version.ts`'s `gameData()` — set at the mount, so it can
+only ever be a build the gate accepted.
+
 On the client: `LanLobby.addRelay(url, "official")` (main.ts `lanSession`) watches it as a Servers
 List row with no ✕, listed first, never removed — not by `removeRelay`, not by the beacon's set, and
 not by `promote`, so joining a friend's LAN game leaves it watched. `normalizeRelayUrl` dials a

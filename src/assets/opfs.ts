@@ -1,4 +1,6 @@
+import { wc3TextDecoder } from "../vfs/text";
 import { fileReader, type CascFiles } from "../vfs/casc";
+import { peFileVersion } from "../vfs/peVersion";
 import type { CustomKeysWriter } from "../data/customKeys";
 
 // Asset import + persistence (plan §1.2). Import once → read the user's own WC3
@@ -113,6 +115,15 @@ export interface PickedInstall {
    * absent when this pick cannot — see `CustomKeysWriter` in src/data/customKeys.ts.
    */
   saveCustomKeys?: CustomKeysWriter;
+  /**
+   * What this folder says it is — `"1.27.0.52240"` — or null when it says nothing readable.
+   *
+   * An MPQ-era folder has no `.build.info` and never had one, so its version comes out of
+   * `War3.exe`'s own resource table (src/vfs/peVersion.ts). A CASC install states its version in
+   * `.build.info` instead and leaves this null; `checkVersion` (src/vfs/version.ts) reads
+   * whichever of the two belongs to the storage the folder turned out to be.
+   */
+  version: string | null;
 }
 
 /**
@@ -133,10 +144,21 @@ const CUSTOM_KEYS_PATHS = ["customkeys.txt", "customkeybindings\\customkeys.txt"
  *  writes — `File.text()` would mangle the first accented character in a German or French one
  *  into a replacement char and put it on a command button. */
 const readAnsi = async (file: File): Promise<string> =>
-  new TextDecoder("windows-1252").decode(await file.arrayBuffer());
+  wc3TextDecoder().decode(await file.arrayBuffer());
+
+/** `War3.exe`'s own version, or null when it cannot be read. Half a megabyte, read once. */
+const readExeVersion = async (file: File): Promise<string | null> =>
+  peFileVersion(new Uint8Array(await file.arrayBuffer()));
 
 /** `.build.info` is the marker of a CASC install; an MPQ-era folder has no such file. */
 const BUILD_INFO = ".build.info";
+/**
+ * The MPQ-era game executable — and the ONLY file that says which build such a folder is
+ * (src/vfs/peVersion.ts). Named exactly, because the folder also holds `Warcraft III.exe`, which
+ * is the *launcher*: a 274 KB stub whose own version resource reads `1.0.0.1` and says nothing
+ * about the game data. Verified against the retail 1.27 install.
+ */
+const WAR3_EXE = "war3.exe";
 const isIdx = (name: string): boolean => /^[0-9a-f]{10}\.idx$/i.test(name);
 const dataFileNumber = (name: string): number | null => {
   const m = /^data\.(\d{3})$/i.exec(name);
@@ -180,12 +202,16 @@ export async function readInstallDir(handle: DirHandle): Promise<PickedInstall> 
   const files: InstallFiles = new Map();
   const casc = emptyCasc();
   let customKeys: string | null = null;
+  /** The MPQ era's only statement of which build this is (see `PickedInstall.version`). */
+  let version: string | null = null;
   /** Where the file was found, so a save goes back to the same place. */
   let keysDir: DirHandle = handle;
   let keysName = "CustomKeys.txt";
   for await (const entry of handle.values()) {
     if (entry.kind === "file" && isMpq(entry.name)) {
       files.set(entry.name.toLowerCase(), await entry.getFile());
+    } else if (entry.kind === "file" && entry.name.toLowerCase() === WAR3_EXE) {
+      version = await readExeVersion(await entry.getFile());
     } else if (entry.kind === "file" && entry.name.toLowerCase() === BUILD_INFO) {
       casc.buildInfo = await (await entry.getFile()).text();
     } else if (entry.kind === "file" && entry.name.toLowerCase() === CUSTOM_KEYS_PATHS[0]) {
@@ -207,7 +233,7 @@ export async function readInstallDir(handle: DirHandle): Promise<PickedInstall> 
       await collectCasc(entry, casc);
     }
   }
-  return { files, casc: casc.buildInfo ? casc : null, customKeys, saveCustomKeys: customKeysWriter(keysDir, keysName) };
+  return { files, casc: casc.buildInfo ? casc : null, customKeys, version, saveCustomKeys: customKeysWriter(keysDir, keysName) };
 }
 
 /** Walk `Data\` for the pieces a CASC mount needs (vfs/casc.ts). Everything but the
@@ -271,12 +297,14 @@ function pickViaInput(): Promise<PickedInstall | null> {
         const files: InstallFiles = new Map();
         const casc = emptyCasc();
         let customKeys: string | null = null;
+        let version: string | null = null;
         for (const file of Array.from(list)) {
           // webkitRelativePath is "<pickedFolder>/Maps/FrozenThrone/(2)EchoIsles.w3x";
           // drop the folder the user picked, and speak WC3's separator.
           const parts = file.webkitRelativePath.split("/").slice(1);
           const top = parts[0]?.toLowerCase();
           if (parts.length === 1 && isMpq(file.name)) { files.set(file.name.toLowerCase(), file); continue; }
+          if (parts.length === 1 && file.name.toLowerCase() === WAR3_EXE) { version = await readExeVersion(file); continue; }
           if (parts.length === 1 && file.name.toLowerCase() === BUILD_INFO) { casc.buildInfo = await file.text(); continue; }
           // Either of the two places a CustomKeys.txt may be (CUSTOM_KEYS_PATHS), matched on the
           // whole relative path so the root one wins over the sub-folder's.
@@ -294,7 +322,7 @@ function pickViaInput(): Promise<PickedInstall | null> {
           if (isUnderMaps(rel)) files.set(rel, file);
         }
         if (!files.size && !casc.buildInfo) return resolve(null);
-        resolve({ files, casc: casc.buildInfo ? casc : null, customKeys });
+        resolve({ files, casc: casc.buildInfo ? casc : null, customKeys, version });
       })();
     };
     input.oncancel = () => resolve(null);

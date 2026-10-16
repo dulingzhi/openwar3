@@ -96,10 +96,15 @@ const COMPLETE = ".ow3-download.json";
 
 /** Which entries the browser keeps. It never runs the game's executables, so of the archive's
  *  ~470 entries it wants the content store, the maps, the version file and the player's hotkeys
- *  — what `readInstallDir` reads, and nothing it would only have to skip. */
+ *  — what `readInstallDir` reads, and nothing it would only have to skip.
+ *
+ *  `war3.exe` is on the list for its RESOURCE TABLE and nothing else: it is the only file in an
+ *  MPQ-era folder that says which build the folder is (src/vfs/peVersion.ts), and `readInstallDir`
+ *  reads exactly that much of it. Nothing here is ever executed — it is a few hundred kilobytes of
+ *  bytes on the same local origin as everything else the mount reads. */
 const wanted = (path: string): boolean => {
   const p = path.toLowerCase();
-  return p === ".build.info" || p === "customkeys.txt" || p === "customkeybindings/customkeys.txt" ||
+  return p === ".build.info" || p === "war3.exe" || p === "customkeys.txt" || p === "customkeybindings/customkeys.txt" ||
     p.startsWith("data/") || /^[^/]+\.mpq$/.test(p) || (p.startsWith("maps/") && /\.(w3m|w3x)$/.test(p));
 };
 

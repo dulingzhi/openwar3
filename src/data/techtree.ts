@@ -1,3 +1,4 @@
+import { wc3TextDecoder } from "../vfs/text";
 import { MappedData } from "mdx-m3-viewer/dist/cjs/utils/mappeddata";
 import type { DataSource } from "../vfs/types";
 
@@ -348,12 +349,12 @@ export function loadTechRegistry(vfs: DataSource): TechRegistry {
   const funcs = new MappedData();
   for (const path of FUNC_FILES) {
     const bytes = vfs.rawBytes(path);
-    if (bytes) funcs.load(mergeRepeatedLists(new TextDecoder("windows-1252").decode(bytes)));
+    if (bytes) funcs.load(mergeRepeatedLists(wc3TextDecoder().decode(bytes)));
   }
   const strs = new MappedData();
   for (const path of STRING_FILES) {
     const bytes = vfs.rawBytes(path);
-    if (bytes) strs.load(new TextDecoder("windows-1252").decode(bytes));
+    if (bytes) strs.load(wc3TextDecoder().decode(bytes));
   }
   const defs = new Map<string, TechDef>();
   for (const id of Object.keys(funcs.map)) {

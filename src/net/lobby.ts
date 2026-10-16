@@ -1,5 +1,6 @@
 import { DEFAULT_RELAY_PORT, RELAY_PATH, type GameMessage, type HostInfo, type PeerInfo, type RoomInfo, type ServerMessage } from "./protocol";
 import { edition } from "../data/edition";
+import { gameData } from "../vfs/version";
 import type { Transport } from "./transportTypes";
 import { localStorageStore, reconnectPlan, type SessionStore } from "./reconnect";
 
@@ -362,7 +363,7 @@ export class LanLobby {
       if (!entry?.connected || !entry.transport) throw new Error("That server is not answering.");
       this.promote(on);
     }
-    this.transport?.send({ t: "create", name, playerName, mapName, mapPath, maxPlayers, observers, edition: edition(), speed });
+    this.transport?.send({ t: "create", name, playerName, mapName, mapPath, maxPlayers, observers, edition: edition(), speed, gameData: gameData() ?? undefined });
   }
 
   /** Every place a game could be announced right now: the connection we stand on, then each
@@ -399,7 +400,7 @@ export class LanLobby {
     const room = this.state.rooms.find((r) => r.key === key);
     if (!room) return;
     if (room.source) this.promote(room.source);
-    this.transport?.send({ t: "join", roomId: room.id, playerName });
+    this.transport?.send({ t: "join", roomId: room.id, playerName, gameData: gameData() ?? undefined });
   }
 
   /**
@@ -716,7 +717,7 @@ export class LanLobby {
   private tryRejoin(rooms: RoomInfo[]): void {
     const plan = reconnectPlan(this.store.load(), rooms);
     if (plan) {
-      this.transport?.send({ t: "join", roomId: plan.roomId, playerName: plan.playerName, token: plan.token });
+      this.transport?.send({ t: "join", roomId: plan.roomId, playerName: plan.playerName, token: plan.token, gameData: gameData() ?? undefined });
     } else {
       this.reconnecting = false;
       this.store.save(null);

@@ -24,8 +24,10 @@ data, or asset behaviour, **consult our sources** and cite what you used.
    - **Archive split** (`ARCHIVE_ORDER` in `src/vfs/casc.ts`, later wins): `Deprecated.mpq` = art old custom maps
      still reference; `War3.mpq` = everything shared; `<locale>-War3Local.mpq` = localized text, unit voices and the
      campaign maps. 1.30 kept the MPQ *names* after dropping the format. A legacy MPQ-era install is still
-     mountable and layers `war3 < war3x < war3xlocal < war3patch` (`src/vfs/profiles.ts`), but 1.30.4 is what we
-     target and what the developer runs.
+     mountable and layers `war3 < war3x < war3xlocal < war3patch` (`src/vfs/profiles.ts`), and **1.27 is a
+     supported second target** — read [`docs/versions.md`](docs/versions.md) before touching
+     [`src/vfs/version.ts`](src/vfs/version.ts), [`src/vfs/peVersion.ts`](src/vfs/peVersion.ts),
+     [`src/vfs/text.ts`](src/vfs/text.ts) or a `REQUIRED_VERSION`. 1.30.4 stays the default.
    - **Tileset overlay** (`src/vfs/tileset.ts`; docs/casc.md): a tileset is an ARCHIVE, not a suffix. Every
      tileset's cliff faces, water frames, ubersplats and re-tinted creep skins sit at the SAME logical path
      (`ReplaceableTextures\Cliff\Cliff0.blp`) and are told apart by the nested archive they live in, reachable
@@ -271,6 +273,25 @@ data, or asset behaviour, **consult our sources** and cite what you used.
   1.30–2.0.4 config is a 404), so the intermediate CHECKPOINTS are community copies pinned by
   commit in `tools/patch-checkpoints.mjs` (1.31.1 … 2.0.4; none exists for 1.35/1.36). Where the
   notes and the tables disagree, the tables win.
+- **1.27:** read [`docs/versions.md`](docs/versions.md) before touching [`src/vfs/version.ts`](src/vfs/version.ts),
+  [`src/vfs/peVersion.ts`](src/vfs/peVersion.ts) or [`src/vfs/text.ts`](src/vfs/text.ts). OpenWar3
+  plays **two** builds and the version is a GATE, checked every launch, because every number comes
+  out of the player's own install and nothing on the wire would ever notice two players disagreeing
+  about what a Footman is. An MPQ folder has no `.build.info`, so its build is read out of
+  **`War3.exe`**'s `VS_VERSION_INFO` resource — `War3.exe`, never `Warcraft III.exe`, which is the
+  launcher and says `1.0.0.1`. The shell cannot read a PE resource and does not try: it checks the
+  folder's SHAPE and the renderer, which owns the only reader, names the build, so a 1.26 folder is
+  accepted by the installer and refused by the game rather than the other way round. 1.27's
+  constants were MEASURED against 1.30.4's, not assumed — all 92 `MiscGame` + 44 `MiscData` rows and
+  21 of 22 melee constants are identical; the unit tables are not, and those are the balance
+  changes. Two things that cost a round each: resource-directory offsets are relative to the ROOT
+  of the resource directory and not to the containing one, and the third level is a LEAF. The later
+  patches do not apply (they are stated against 1.30.4) — including `MiscGame.txt`, which is
+  compiled in and reaches `miscGame()` without the VFS's help, which is what `patchesApply()` is
+  for. And a localized install's text is **UTF-8 with a BOM**: read as windows-1252 the menu is
+  mojibake and, worse, the BOM lands inside the file's FIRST KEY. `wc3TextDecoder` is the one
+  decoder and the rule is the file's own declaration; it is not a general localization fix, and a
+  BOM-less GBK install is still garbled and still unmeasured.
 - **Icons:** read [`docs/icons.md`](docs/icons.md) before touching
   [`src/vfs/derivedArt.ts`](src/vfs/derivedArt.ts), `blpIcon` or an ability's `Art`. An icon is
   the install's, then our own drawn art (`src/patches/art/`), then DERIVED at mount — a missing

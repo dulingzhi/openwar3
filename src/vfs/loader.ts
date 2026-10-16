@@ -4,7 +4,8 @@ import { CascDataSource, isCascInstall } from "./casc";
 import type { DataSource, LoadProgress } from "./types";
 import type { ContentProfile } from "./profiles";
 import { installMaps, type PickedInstall } from "../assets/opfs";
-import { checkVersion } from "./version";
+import { checkVersion, setGameData } from "./version";
+import { setPatchesApply } from "../patches";
 import { setCustomKeys } from "../data/customKeys";
 import { EditionDataSource } from "./edition";
 import { PatchDataSource } from "./patch";
@@ -44,6 +45,15 @@ export async function loadProfile(
   // between launches is told on the next one.
   const verdict = checkVersion(install);
   if (!verdict.ok) throw new Error(verdict.message);
+  // …and what it turned out to BE, published for the LAN lobby: a room records which game data
+  // its host holds, and refuses a joiner whose own label differs, because the relay can compare
+  // two strings but knows nothing about Warcraft III. Set here, at the same door, so the label
+  // can only ever be one the gate accepted.
+  setGameData(verdict.data);
+  // …and whether the later balance patches apply at all, which they never do to an MPQ-era
+  // install (src/patches/index.ts). Stated here beside the version because it is the same fact:
+  // a patch is written against 1.30.4, and 1.27 is not 1.30.4.
+  setPatchesApply(isCascInstall(install.casc));
 
   // The player's own `CustomKeys.txt` (issue #142), handed to the data layer HERE for the same
   // reason the version gate is asked here: this is the one function all three doors pass

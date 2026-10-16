@@ -1,3 +1,4 @@
+import { wc3TextDecoder } from "../vfs/text";
 import { MappedData } from "mdx-m3-viewer/dist/cjs/utils/mappeddata";
 import { layCustomKeys } from "./customKeys";
 import { versionIndex } from "./edition";
@@ -616,7 +617,7 @@ const FUNC_FILES = [
 export function loadUnitRegistry(vfs: DataSource): UnitRegistry {
   const table = (path: string): MappedData | null => {
     const bytes = vfs.rawBytes(path);
-    return bytes ? new MappedData(new TextDecoder("windows-1252").decode(bytes)) : null;
+    return bytes ? new MappedData(wc3TextDecoder().decode(bytes)) : null;
   };
   const data = table(SLK.data);
   const balance = table(SLK.balance);
@@ -627,12 +628,12 @@ export function loadUnitRegistry(vfs: DataSource): UnitRegistry {
   const names = new MappedData();
   for (const path of STRING_FILES) {
     const bytes = vfs.rawBytes(path);
-    if (bytes) names.load(new TextDecoder("windows-1252").decode(bytes));
+    if (bytes) names.load(wc3TextDecoder().decode(bytes));
   }
   const funcs = new MappedData();
   for (const path of FUNC_FILES) {
     const bytes = vfs.rawBytes(path);
-    if (bytes) funcs.load(new TextDecoder("windows-1252").decode(bytes));
+    if (bytes) funcs.load(wc3TextDecoder().decode(bytes));
   }
   // …and the player's own hotkeys/tips/slots over the top of both, when Options → Gameplay →
   // "Hotkeys:" is on Custom (data/customKeys.ts). Here, at the table, rather than on each

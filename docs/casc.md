@@ -3,9 +3,11 @@
 OpenWar3 targets **Warcraft III: The Frozen Throne 1.30.4**. That version's UI is the one built
 for widescreen (the console side-panels and the top bar stretch properly), which is why it is
 the target — but it also dropped MPQ for **CASC**, Blizzard's NGDP content store, so the whole
-asset layer had to learn a second storage. The MPQ path is kept and still mounts a legacy
-MPQ-era folder unchanged; which one a picked folder is, is decided by `.build.info` beside the
-exe, never asked of the player.
+asset layer had to learn a second storage. The MPQ path is kept and **mounts a legacy MPQ-era
+folder unchanged — 1.27 among them, which is a supported second build**; which one a picked folder
+is, is decided by `.build.info` beside the exe, never asked of the player. An MPQ folder has no
+such file, so *its* build is read from `War3.exe`'s resource table instead — see
+[`docs/versions.md`](versions.md) for what may be mounted and why.
 
 Read this before touching `src/vfs/casc.ts`, `src/vfs/blte.ts`, `src/vfs/mapArchive.ts`, the
 install picker, or `tools/extract-data.mjs`.

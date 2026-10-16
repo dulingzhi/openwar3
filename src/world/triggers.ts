@@ -1,3 +1,4 @@
+import { wc3TextDecoder } from "../vfs/text";
 import type { MpqDataSource } from "../vfs/mpq";
 
 // Reading a map's triggers (plan Phase 7 — this is the first step).
@@ -62,7 +63,7 @@ export function readMapScript(mpq: MpqDataSource): MapScript {
   const language: ScriptLanguage = jass ? "jass" : lua ? "lua" : "none";
   // JASS/Lua source is ASCII with the odd Latin-1 byte in string literals;
   // windows-1252 decodes it without throwing (matches slkText elsewhere).
-  const source = bytes ? new TextDecoder("windows-1252").decode(bytes) : "";
+  const source = bytes ? wc3TextDecoder().decode(bytes) : "";
   const meleeFuncs = MELEE_INIT_FUNCS.filter((fn) => source.includes(fn));
   return {
     language,

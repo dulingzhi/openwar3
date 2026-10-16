@@ -1,3 +1,4 @@
+import { wc3TextDecoder } from "../vfs/text";
 import type { NativeCtx, Runtime } from "../jass/runtime";
 import { asInt, asNum, asStr, jBool, jHandle, jInt, jStr, JNULL, truthy, type JassValue } from "../jass/values";
 import { FdfLibrary } from "../ui/fdf/library";
@@ -172,12 +173,12 @@ export function registerFrameNatives(rt: Runtime): void {
     const toc = read(path);
     if (!toc) return jBool(false);
     const m = model(c);
-    for (const line of new TextDecoder("latin1").decode(toc).split(/\r?\n/)) {
+    for (const line of wc3TextDecoder("latin1").decode(toc).split(/\r?\n/)) {
       const fdf = line.trim();
       if (!fdf || m.sources.some((s) => s.id === fdf)) continue;
       const bytes = read(fdf);
       if (!bytes) continue;
-      const text = new TextDecoder("latin1").decode(bytes);
+      const text = wc3TextDecoder("latin1").decode(bytes);
       m.lib.loadOverride(fdf, text);
       m.sources.push({ id: fdf, text });
     }

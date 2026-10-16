@@ -24,6 +24,11 @@
 ;     inside `customWelcomePage` and still reach it. Program Files needs elevation anyway.
 
 !define OW3_REQUIRED_VERSION "1.30.4"
+; The MPQ-era build the game also plays (src/vfs/version.ts). NSIS cannot read a PE version
+; resource — which is where a 1.27 folder's build actually lives — so for that era this installer
+; checks the folder's SHAPE and lets the game check the build, exactly as the desktop shell does
+; (electron/install.mjs `looksLikeInstall`). Kept in sync by `pnpm app:test`.
+!define OW3_REQUIRED_MPQ_VERSION "1.27"
 
 !include LogicLib.nsh
 !include FileFunc.nsh
@@ -33,10 +38,24 @@
 Var ow3Folder   ; in:  the folder to ask about
 Var ow3Verdict  ; out: "ok", "missing" (not Warcraft III at all) or "version" (the wrong one)
 
-; Is $ow3Folder a Warcraft III 1.30.4 folder? The version row of `.build.info` ends
-; `|1.30.4.<build>|<complete>`, so "|1.30.4." is searched for. A line longer than NSIS's string
-; limit arrives in pieces (read 1000 characters at a time, so the glued string still fits), and
-; each piece is searched with the last 7 characters of the one before it in front.
+; Is $ow3Folder a Warcraft III OpenWar3 can play?
+;
+; TWO ERAS, TWO QUESTIONS.
+;
+; 1.30.4 is a CASC content store and states its build as text: the version row of `.build.info`
+; ends `|1.30.4.<build>|<complete>`, so "|1.30.4." is searched for. A line longer than NSIS's
+; string limit arrives in pieces (read 1000 characters at a time, so the glued string still fits),
+; and each piece is searched with the last 7 characters of the one before it in front.
+;
+; 1.27 is four MPQs and says nothing about its build in any file this language can read — the
+; answer is in `War3.exe`'s PE resource table, and NSIS has no way to open one. So the check is
+; the folder's SHAPE: the game executable plus at least one archive, which is what the mount
+; needs and what no unrelated folder has. The GAME then reads the build for real and refuses a
+; 1.26 folder by name (src/vfs/version.ts) — a folder this installer accepted and the game
+; declines costs the player one message, where the reverse would cost them a broken install.
+;
+; `War3.exe` and not `Warcraft III.exe`: in this era the latter is the launcher, and every TFT
+; folder has one whether or not the game is there.
 Function ow3AskFolder
   Push $0
   Push $1
@@ -76,6 +95,9 @@ Function ow3AskFolder
       ${Loop}
       FileClose $0
     ${EndIf}
+  ${ElseIf} ${FileExists} "$ow3Folder\War3.exe"
+  ${AndIf} ${FileExists} "$ow3Folder\*.mpq"
+    StrCpy $ow3Verdict "ok"
   ${EndIf}
   Pop $4
   Pop $3
@@ -130,10 +152,10 @@ Function ow3DirectoryLeave
     ${EndIf}
   ${EndIf}
   ${If} $ow3Verdict == "missing"
-    MessageBox MB_OK|MB_ICONEXCLAMATION "That is not a Warcraft III folder.$\r$\n$\r$\nChoose the folder Warcraft III: The Frozen Throne is installed in — the one with $\"Warcraft III.exe$\" and a $\"Data$\" folder in it."
+    MessageBox MB_OK|MB_ICONEXCLAMATION "That is not a Warcraft III folder.$\r$\n$\r$\nChoose the folder Warcraft III: The Frozen Throne is installed in — either the one with a $\"Data$\" folder and $\\".build.info$\\" beside the game, or an older one with $\\"War3.exe$\\" and its $\\".mpq$\\" archives."
     Abort
   ${ElseIf} $ow3Verdict == "version"
-    MessageBox MB_OK|MB_ICONEXCLAMATION "That Warcraft III is not version ${OW3_REQUIRED_VERSION}.$\r$\n$\r$\nOpenWar3 reads every unit, ability and cost out of the game's own files, so it needs exactly The Frozen Throne ${OW3_REQUIRED_VERSION}."
+    MessageBox MB_OK|MB_ICONEXCLAMATION "That Warcraft III is not version ${OW3_REQUIRED_VERSION} or ${OW3_REQUIRED_MPQ_VERSION}.$\r$\n$\r$\nOpenWar3 reads every unit, ability and cost out of the game's own files, so every player has to be on the same game data — The Frozen Throne ${OW3_REQUIRED_VERSION}, or the older ${OW3_REQUIRED_MPQ_VERSION}."
     Abort
   ${EndIf}
 FunctionEnd
@@ -161,13 +183,13 @@ FunctionEnd
 
   !define MUI_PAGE_CUSTOMFUNCTION_PRE ow3SkipIfUpdated
   !define MUI_WELCOMEPAGE_TITLE "Welcome to OpenWar3"
-  !define MUI_WELCOMEPAGE_TEXT "OpenWar3 plays out of your own copy of Warcraft III: The Frozen Throne ${OW3_REQUIRED_VERSION} and ships none of its files.$\r$\n$\r$\nOn the next page, choose your Warcraft III folder. OpenWar3 is installed into an OpenWar3 folder inside it, and nothing of the game's is changed.$\r$\n$\r$\nClick Next to continue."
+  !define MUI_WELCOMEPAGE_TEXT "OpenWar3 plays out of your own copy of Warcraft III: The Frozen Throne ${OW3_REQUIRED_VERSION} or ${OW3_REQUIRED_MPQ_VERSION}, and ships none of its files.$\r$\n$\r$\nOn the next page, choose your Warcraft III folder. OpenWar3 is installed into an OpenWar3 folder inside it, and nothing of the game's is changed.$\r$\n$\r$\nClick Next to continue."
   !insertmacro MUI_PAGE_WELCOME
 
   ; Consumed by the MUI_PAGE_DIRECTORY the template inserts next.
   !define MUI_PAGE_HEADER_TEXT "Choose your Warcraft III folder"
-  !define MUI_PAGE_HEADER_SUBTEXT "OpenWar3 needs Warcraft III: The Frozen Throne ${OW3_REQUIRED_VERSION}."
-  !define MUI_DIRECTORYPAGE_TEXT_TOP "Choose the folder Warcraft III is installed in — the one with $\"Warcraft III.exe$\" in it. OpenWar3 will be installed into an OpenWar3 folder inside it."
+  !define MUI_PAGE_HEADER_SUBTEXT "OpenWar3 needs Warcraft III: The Frozen Throne ${OW3_REQUIRED_VERSION} or ${OW3_REQUIRED_MPQ_VERSION}."
+  !define MUI_DIRECTORYPAGE_TEXT_TOP "Choose the folder Warcraft III is installed in — the one with the game in it. OpenWar3 will be installed into an OpenWar3 folder inside it."
   !define MUI_DIRECTORYPAGE_TEXT_DESTINATION "Warcraft III folder"
   !define MUI_PAGE_CUSTOMFUNCTION_LEAVE ow3DirectoryLeave
 !macroend
@@ -211,6 +233,7 @@ FunctionEnd
 ; this is the one line in the installer that could destroy something that is not ours.
 !macro customRemoveFiles
   ${If} ${FileExists} "$INSTDIR\.build.info"
+  ${OrIf} ${FileExists} "$INSTDIR\War3.exe"
   ${OrIf} ${FileExists} "$INSTDIR\Warcraft III.exe"
     DetailPrint "Not removing $INSTDIR: it is a Warcraft III folder, not OpenWar3's."
   ${Else}

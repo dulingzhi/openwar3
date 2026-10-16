@@ -132,6 +132,37 @@ interface Resolved {
 
 let resolved: Resolved | null = null;
 
+/**
+ * Whether these patches apply to the install that is mounted.
+ *
+ * False for an MPQ-era install — 1.27 — and the reason is the same one that keeps
+ * `PatchDataSource` off that branch (src/vfs/loader.ts): every release in the chain is stated
+ * against **1.30.4**, and a 1.27 folder is older than all of them. Its tables are what those
+ * releases were built ON, so laying them over it would not be "the patched game", it would be
+ * 2.0.x balance with 1.27's units.
+ *
+ * **This is the half the VFS cannot gate.** A unit row a patch moves arrives through
+ * `PatchDataSource`, which an MPQ mount simply does not wrap — but `Units\MiscGame.txt` is
+ * COMPILED IN (src/data/gameplayConstants.ts), out of the VFS's reach, and reaches `miscGame()`
+ * through `patchedMiscGame` below. Left ungated, a 1.27 melee match quietly fought on the 2.0.3
+ * Piercing table. One flag, asked by `resolve()`, covers every reader of the chain.
+ *
+ * Default TRUE so a caller that never mounts anything — every headless tool, `patch-check` —
+ * sees the chain it is there to check; `loadProfile` states the truth at the one door.
+ */
+let applies = true;
+
+/** Do the later patches apply to the mounted install? False on the MPQ era. */
+export const patchesApply = (): boolean => applies;
+
+/** Called by `loadProfile` only, beside `setGameData`. */
+export function setPatchesApply(value: boolean): void {
+  if (applies === value) return;
+  applies = value;
+  resolved = null;
+  for (const fn of listeners) fn();
+}
+
 function denied(id: string): boolean {
   return DENIED_IDS.includes(id);
 }
@@ -161,6 +192,9 @@ function resolve(): Resolved {
   if (resolved) return resolved;
   const files = new Map<string, { path: string; edits: FileEdits }>();
   const art = new Map<string, string>();
+  // An install these patches do not apply to resolves to nothing at all, rather than to a chain
+  // every reader has to remember to ask about (see `applies`).
+  if (!applies) return (resolved = { files, art });
   for (const patch of activePatches()) {
     for (const change of patch.changes) {
       for (const [path, edits] of Object.entries(change.files ?? {})) {

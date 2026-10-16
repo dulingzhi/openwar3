@@ -3,7 +3,7 @@ import { toGameSpeed } from "../data/gameSpeed";
 import { DEFAULT_PROFILE } from "../vfs/profiles";
 import type { InstallFiles } from "../assets/opfs";
 import {
-  fetchCasc, fetchInstallAnsi, fetchInstallFile, type FileUrl, type InstallManifest,
+  fetchCasc, fetchInstallAnsi, fetchInstallBytes, fetchInstallFile, type FileUrl, type InstallManifest,
 } from "../assets/remoteInstall";
 import type { GateLoad } from "../ui/gate";
 import { OBSERVER_PLAYER, type FogMode, type MeleeConfig, type SlotConfig } from "../ui/lobby";
@@ -19,6 +19,7 @@ import { matchLinkFrom, type MatchLinkSetup } from "../game/matchLink";
 import { MELEE_INSANE, MELEE_NEWBIE, MELEE_NORMAL } from "../ai/ids";
 import { edition, setEdition, type Edition } from "../data/edition";
 import { patchLevel, setPatchLevel } from "../patches";
+import { peFileVersion } from "../vfs/peVersion";
 
 /**
  * Scripted boot for automated testing — the load gate without the human
@@ -79,6 +80,17 @@ const log = (msg: string): void => console.info(`[dev-boot] ${msg}`);
 const fileUrl: FileUrl = (path) => `/wc3/file?path=${encodeURIComponent(path)}`;
 
 const fetchFile = (path: string): Promise<File> => fetchInstallFile(fileUrl, path);
+
+/** `War3.exe`'s own version, for an MPQ-era served install (src/vfs/peVersion.ts) — the same read
+ *  the three real doors do, so a scripted 1.27 boot passes the gate for the same reason a picked
+ *  folder does rather than through a bypass of its own. */
+async function war3ExeVersion(url: FileUrl): Promise<string | null> {
+  try {
+    return peFileVersion(await fetchInstallBytes(url, "War3.exe"));
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Seat every slot the map declares, with `player` at the wheel. Deliberately NOT the skirmish
@@ -273,7 +285,11 @@ export async function devBoot(hooks: DevBootHooks): Promise<void> {
     const res = await fetch("/wc3/customkeys", { method: "POST", body: bytes.slice() });
     if (!res.ok) throw new Error(`CustomKeys.txt could not be written (${res.status}).`);
   };
-  const load = await loadProfile({ files, casc, customKeys, saveCustomKeys }, DEFAULT_PROFILE, (msg) => log(msg));
+  const load = await loadProfile(
+    { files, casc, customKeys, version: manifest.casc ? null : await war3ExeVersion(fileUrl), saveCustomKeys },
+    DEFAULT_PROFILE,
+    (msg) => log(msg),
+  );
   log(`mounted ${load.mounted.join(", ")} — ${load.fileCount.toLocaleString()} files`);
   hooks.mountInstall(load);
 

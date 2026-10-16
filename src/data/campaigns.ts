@@ -1,3 +1,4 @@
+import { wc3TextDecoder } from "../vfs/text";
 import type { DataSource } from "../vfs/types";
 import { parseWar3Skins, skinValue, WAR3SKINS } from "./war3skins";
 import { isRoc, skinVersionSuffix } from "./edition";
@@ -123,12 +124,12 @@ export interface Campaign {
  *  when the file isn't there. */
 export async function loadCampaigns(vfs: DataSource): Promise<Campaign[]> {
   const skins = vfs.exists(WAR3SKINS)
-    ? parseWar3Skins(new TextDecoder("latin1").decode(await vfs.read(WAR3SKINS)))
+    ? parseWar3Skins(wc3TextDecoder("latin1").decode(await vfs.read(WAR3SKINS)))
     : new Map<string, Map<string, string>>();
   const file = skinValue(skins, "Default", "CampaignFile" + skinVersionSuffix())
     ?? (isRoc() ? ROC_CAMPAIGN_INDEX : CAMPAIGN_INDEX);
   if (!vfs.exists(file)) return [];
-  const src = new TextDecoder("latin1").decode(await vfs.read(file));
+  const src = wc3TextDecoder("latin1").decode(await vfs.read(file));
   // war3skins spells the backdrop `.mdl` (the World Editor's own spelling); the archives ship
   // the compiled `.mdx`. Same swap as everywhere else a data file names a model
   // (render/dayNight.ts, mapViewer.ts) — without it the campaign screen has no background.

@@ -23,6 +23,7 @@
 // nothing here read `usnd`. Fifty-odd other codes were being dropped the same way, on both
 // tables — an edited stock unit and a brand-new custom one go through this identical path.
 
+import { wc3TextDecoder } from "../vfs/text";
 import War3MapW3u from "mdx-m3-viewer/dist/cjs/parsers/w3x/w3u/file";
 import War3MapW3d from "mdx-m3-viewer/dist/cjs/parsers/w3x/w3d/file";
 import { MappedData } from "mdx-m3-viewer/dist/cjs/utils/mappeddata";
@@ -619,7 +620,7 @@ function cloneDef(base: UnitDef, id: string): UnitDef {
  */
 /** Build a TRIGSTR_-resolver from a map's war3map.wts bytes (identity if none). */
 export function makeTrigStr(wtsBytes?: Uint8Array): (v: string) => string {
-  const table = wtsBytes ? parseWts(new TextDecoder("utf-8").decode(wtsBytes)) : null;
+  const table = wtsBytes ? parseWts(wc3TextDecoder("utf-8").decode(wtsBytes)) : null;
   return (v: string): string => {
     if (!table || !v.startsWith("TRIGSTR_")) return v;
     const id = parseInt(v.slice("TRIGSTR_".length), 10);
@@ -956,7 +957,7 @@ function applyAbilityMods(def: AbilityDef, mods: AbilMod[], meta: MappedData, tr
  * each 4-char field code to its column/data slot); without it nothing can be applied.
  */
 export function applyMapAbilityData(registry: AbilityRegistry, w3aBytes: Uint8Array, metaBytes: Uint8Array, wtsBytes?: Uint8Array, layer: ObjectLayer = {}): number {
-  const meta = new MappedData(new TextDecoder("windows-1252").decode(metaBytes));
+  const meta = new MappedData(wc3TextDecoder().decode(metaBytes));
   const trigStr = makeTrigStr(wtsBytes);
   const w3a = new War3MapW3d();
   w3a.load(w3aBytes);
@@ -1070,7 +1071,7 @@ function applyUpgradeMods(def: UpgradeDef, mods: AbilMod[], meta: MappedData, tr
  * field code to its UpgradeData column; without it nothing can be applied.
  */
 export function applyMapUpgradeData(registry: UpgradeRegistry, w3qBytes: Uint8Array, metaBytes: Uint8Array, wtsBytes?: Uint8Array): number {
-  const meta = new MappedData(new TextDecoder("windows-1252").decode(metaBytes));
+  const meta = new MappedData(wc3TextDecoder().decode(metaBytes));
   const trigStr = makeTrigStr(wtsBytes);
   const w3q = new War3MapW3d(); // level-indexed, like abilities
   w3q.load(w3qBytes);

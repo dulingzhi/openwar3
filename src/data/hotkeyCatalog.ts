@@ -1,3 +1,4 @@
+import { wc3TextDecoder } from "../vfs/text";
 import { MappedData } from "mdx-m3-viewer/dist/cjs/utils/mappeddata";
 import type { DataSource } from "../vfs/types";
 import { readIni, splitList, type IniSection } from "./customKeysDoc";
@@ -105,7 +106,7 @@ const BUILD_CMD: Record<CatalogRace, string> = {
   human: "CmdBuildHuman", orc: "CmdBuildOrc", nightelf: "CmdBuildNightElf", undead: "CmdBuildUndead", neutral: "CmdBuild",
 };
 
-const decode = (bytes: Uint8Array): string => new TextDecoder("windows-1252").decode(bytes);
+const decode = (bytes: Uint8Array): string => wc3TextDecoder().decode(bytes);
 
 /** Strip WC3 colour markup, for a name built out of a Tip. */
 export const plainTip = (s: string): string => s.replace(/\|c[0-9a-f]{8}/gi, "").replace(/\|r/gi, "");
@@ -129,7 +130,7 @@ export class HotkeyCatalog {
       if (bytes) readIni(decode(bytes), this.defaults);
     }
     const skinBytes = vfs.rawBytes(WAR3SKINS);
-    this.skins = skinBytes ? parseWar3Skins(new TextDecoder("latin1").decode(skinBytes)) : new Map();
+    this.skins = skinBytes ? parseWar3Skins(wc3TextDecoder("latin1").decode(skinBytes)) : new Map();
     this.build();
   }
 

@@ -16,7 +16,7 @@
 // The manifest's shape is the renderer's `InstallManifest` (src/assets/remoteInstall.ts), and
 // paths in it speak WC3's `\` separator so they can be used as `InstallFiles` keys verbatim.
 
-import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
+import { createReadStream, existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { readdir, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import { Readable } from "node:stream";
@@ -121,6 +121,12 @@ export async function writeCustomKeys(root, bytes) {
  *  compares the two. */
 export const REQUIRED_VERSION = "1.30.4";
 
+/** The MPQ-era build it also plays — MUST equal `REQUIRED_MPQ_VERSION` in src/vfs/version.ts. */
+export const REQUIRED_MPQ_VERSION = "1.27";
+
+/** The MPQ-era game executable, and the only file in such a folder that states its version. */
+const WAR3_EXE = "War3.exe";
+
 /** What `.build.info` says this folder is — "1.30.4.11274" — or null if it says nothing. The
  *  file is a `|`-separated table with a header row; the row to read is the ACTIVE branch. */
 export function installVersion(root) {
@@ -139,21 +145,39 @@ export function installVersion(root) {
 }
 
 /**
- * Is this folder the Warcraft III OpenWar3 plays?
+ * Is this folder a Warcraft III OpenWar3 can play?
  *
  * Asked of what the player picked, so the answer arrives at the moment of choosing rather than as
  * a mount failing three steps later — and, more importantly, so a folder the game would refuse is
  * never SAVED as the remembered one. The game checks again every launch (src/vfs/version.ts);
  * this is the same rule asked earlier, not a second one.
  *
- * A pre-1.30 (MPQ) folder has no `.build.info` at all and so cannot pass, which is correct: it is
- * older than the build we play by construction.
+ * **Two eras, two questions, and only one of them can be answered here.** A 1.30+ folder states
+ * its build as text in `.build.info`, so this side reads it and applies the same three-component
+ * rule the game does. An MPQ-era folder — 1.27 — has no `.build.info` and never had one: its build
+ * lives in `War3.exe`'s PE resource table, which Node cannot read without a second parser for a
+ * format the renderer already has one of (src/vfs/peVersion.ts). So the MPQ answer is the folder's
+ * SHAPE, and the build itself is left to the renderer, which refuses a 1.26 folder with the
+ * version in the message. Asking the shape here is still worth doing: it is the difference
+ * between remembering a Warcraft III folder and remembering the player's Documents.
  */
 export function looksLikeInstall(root) {
   if (!root || !existsSync(root)) return false;
-  if (!existsSync(join(root, "Data"))) return false;
-  const version = installVersion(root);
-  return !!version && version.split(".").slice(0, 3).join(".") === REQUIRED_VERSION;
+  // A content store: the version is readable here, so the exact rule applies.
+  if (existsSync(join(root, "Data"))) {
+    const version = installVersion(root);
+    return !!version && version.split(".").slice(0, 3).join(".") === REQUIRED_VERSION;
+  }
+  // The MPQ era: the game executable plus at least one archive, which is what the mount needs
+  // and what no unrelated folder has. `War3.exe` and not `Warcraft III.exe` — the latter is the
+  // launcher in this era, and every TFT folder has one.
+  try {
+    const entries = readdirSync(root);
+    return entries.some((n) => n.toLowerCase() === WAR3_EXE.toLowerCase())
+      && entries.some((n) => MPQ.test(n));
+  } catch {
+    return false;
+  }
 }
 
 /**

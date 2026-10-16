@@ -1,7 +1,8 @@
 import type { PickedInstall, InstallFiles } from "./opfs";
 import type { DownloadProgress } from "./downloadInstall";
+import { peFileVersion } from "../vfs/peVersion";
 import {
-  fetchCasc, fetchInstallAnsi, fetchInstallFile, lazyMapFile,
+  fetchCasc, fetchInstallAnsi, fetchInstallBytes, fetchInstallFile, lazyMapFile,
   type FileUrl, type InstallManifest,
 } from "./remoteInstall";
 
@@ -190,5 +191,31 @@ export async function loadNativeInstall(): Promise<PickedInstall> {
   const native = bridge();
   const saveCustomKeys = native?.saveCustomKeys ? (bytes: Uint8Array) => native.saveCustomKeys!(bytes) : undefined;
 
-  return { files, casc: manifest.casc ? await fetchCasc(fileUrl, manifest.casc) : null, customKeys, saveCustomKeys };
+  return {
+    files,
+    casc: manifest.casc ? await fetchCasc(fileUrl, manifest.casc) : null,
+    customKeys,
+    version: manifest.casc ? null : await war3ExeVersion(fileUrl),
+    saveCustomKeys,
+  };
+}
+
+/**
+ * Which build an MPQ-era folder is, read from `War3.exe` over the same scheme every other byte
+ * comes through.
+ *
+ * Deliberately NOT a field on the manifest: the shell would then need its own PE reader, and two
+ * readers of one file format are two answers that agree until the day they do not — the same
+ * argument that put the install walk in one place. The shell checks the folder's SHAPE
+ * (electron/install.mjs) and this side, which owns the reader, says which build it is.
+ *
+ * Half a megabyte, fetched once per mount. A folder with no `War3.exe` — or one whose resource
+ * table cannot be read — answers null, and `checkVersion` refuses it in the player's own terms.
+ */
+async function war3ExeVersion(url: FileUrl): Promise<string | null> {
+  try {
+    return peFileVersion(await fetchInstallBytes(url, "War3.exe"));
+  } catch {
+    return null;
+  }
 }

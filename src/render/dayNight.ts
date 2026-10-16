@@ -1,3 +1,4 @@
+import { wc3TextDecoder } from "../vfs/text";
 import MdlxModel from "mdx-m3-viewer/dist/cjs/parsers/mdlx/model";
 import type { DataSource } from "../vfs/types";
 import { dataNum } from "../data/gameplayConstants";
@@ -257,7 +258,7 @@ export class DayNightCycle {
 function terrainLightPaths(vfs: DataSource, tileset: string): { terrain: string; unit: string } {
   const bytes = vfs.rawBytes(WORLD_EDIT_DATA);
   if (!bytes) return { terrain: DEFAULT_TERRAIN_LIGHT, unit: DEFAULT_UNIT_LIGHT };
-  const text = new TextDecoder("windows-1252").decode(bytes);
+  const text = wc3TextDecoder().decode(bytes);
   const key = tileset.charAt(0).toUpperCase();
   return {
     terrain: iniValue(text, "TerrainLights", key) ?? DEFAULT_TERRAIN_LIGHT,

@@ -1,3 +1,4 @@
+import { wc3TextDecoder } from "../vfs/text";
 import type { SoundBoard } from "../audio/sounds";
 import type { DataSource } from "../vfs/types";
 import { parseWar3Skins, skinValue, WAR3SKINS } from "../data/war3skins";
@@ -44,7 +45,7 @@ export class GlueAudio {
 
   constructor(private sounds: SoundBoard, private vfs: DataSource) {
     const bytes = vfs.rawBytes(WAR3SKINS);
-    this.skins = bytes ? parseWar3Skins(new TextDecoder("latin1").decode(bytes)) : new Map();
+    this.skins = bytes ? parseWar3Skins(wc3TextDecoder("latin1").decode(bytes)) : new Map();
     this.pick();
   }
 
