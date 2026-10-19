@@ -70,6 +70,7 @@ import type { SoundBoard, SoundCategory } from "../audio/sounds";
 import { WorldOverlays, healthBarsAlways, type HoverLine, type BarAbility, type BarSpec, type CrewLabelSpec, type VoiceLabelSpec } from "../render/worldOverlays";
 import type { VoiceLabels } from "./voiceLabels";
 import { INSANE_HARVEST_FACTOR, MELEE_INSANE } from "../ai/ids";
+import { CheatFlag } from "../sim/cheats";
 
 /** What the single-player dev tools can do to the local player's side (RtsController.cheat). */
 export type CheatKind = "gold" | "lumber" | "food" | "fastbuild" | "godmode" | "day" | "night";
@@ -9397,11 +9398,9 @@ export class RtsController {
   cheat(kind: CheatKind): boolean {
     if (this.networked) return false;
     if (kind === "godmode") {
-      // `whosyourdaddy` — invulnerable, one-hit kills (SimWorld.godPlayers).
-      const gods = this.sim.godPlayers;
-      if (gods.has(this.localPlayer)) gods.delete(this.localPlayer);
-      else gods.add(this.localPlayer);
-      return gods.has(this.localPlayer);
+      // `whosyourdaddy` — SimWorld.landDamage owns the rule: a non-user source does 0 to a
+      // user's unit, and a user's blow lands originalAmount ×100 on a non-user.
+      return this.sim.cheats.toggle(CheatFlag.God);
     }
     if (kind === "day" || kind === "night") {
       // `riseandshine` / `lightsout`: wind the clock to the morning or the evening — the
@@ -9411,10 +9410,12 @@ export class RtsController {
       return false;
     }
     if (kind === "fastbuild") {
-      this.sim.fastBuild = !this.sim.fastBuild; // builds/trains complete in ~1s
-      return this.sim.fastBuild;
+      // `warpten` — SimWorld.fastBuild is now a view of the cheat bit.
+      return this.sim.cheats.toggle(CheatFlag.FastBuild);
     }
     if (kind === "food") {
+      // The dev drawer's one-shot supply gift; the typed `pointbreak` is the real toggle
+      // (`CheatFlag.Food`, see World.canMake / Authority.foodRoom).
       this.authority.addFoodBonus(this.localPlayer, 100);
     } else {
       const stash = this.sim.stashOf(this.localPlayer);
@@ -9422,6 +9423,56 @@ export class RtsController {
       else stash.lumber += 5000;
     }
     return false;
+  }
+
+  // --- the classic cheat commands (game/cheats.ts) ------------------------------------
+  //
+  // These are the individual doors the command table calls. They are PUBLIC because the
+  // command host lives in the scene (it also owns fog, the campaign and the sound board),
+  // while the state these touch is the controller's. Every one refuses in a networked match
+  // at `runCheat`; no door below is reachable from the wire.
+
+  /** `keysersoze` / `leafittome` / `greedisgood` — `CPlayerWar3::AddGold/AddLumber` with no
+   *  upkeep or divert tax, exactly the cheat's own call. */
+  cheatAddGold(player: number, amount: number): void {
+    if (this.networked) return;
+    this.sim.stashOf(player).gold += Math.trunc(amount);
+  }
+  cheatAddLumber(player: number, amount: number): void {
+    if (this.networked) return;
+    this.sim.stashOf(player).lumber += Math.trunc(amount);
+  }
+
+  /** `thedudeabides` — UnitApplyCooldownCheat's world-wide timer kill. */
+  cheatClearCooldowns(): void {
+    if (this.networked) return;
+    this.sim.clearAllCooldowns();
+  }
+
+  /** `sharpandshiny` — CPlayerUpgrade::IncrementUpgrades for all twelve player ids. */
+  cheatIncrementUpgrades(): void {
+    if (this.networked) return;
+    this.authority.cheatIncrementUpgrades();
+  }
+
+  /** `riseandshine` / `lightsout` / `daylightsavings <hour>` — CGameState::TimeOfDaySet. */
+  cheatSetTimeOfDay(hour: number): void {
+    if (this.networked) return;
+    const period = dataNum("DayHours");
+    this.sim.timeOfDay = ((hour % period) + period) % period;
+  }
+
+  /** `daylightsavings -1` — CGameState::TimeOfDayHaltTime / ResumeTime. The bit itself also
+   *  gates SimWorld.tick, so setting it here makes the host and the sim agree. */
+  cheatHaltTimeOfDay(on: boolean): void {
+    if (this.networked) return;
+    this.sim.cheats.set(CheatFlag.HaltTimeOfDay, on);
+  }
+
+  /** `iseedeadpeople` — fog and mask off for THIS machine, nobody else (see setLocalRevealAll). */
+  cheatSetRevealAll(on: boolean): void {
+    if (this.networked) return;
+    this.setLocalRevealAll(on);
   }
 
   /** Debug cheats acting on the current selection: refill HP or MP to full, or

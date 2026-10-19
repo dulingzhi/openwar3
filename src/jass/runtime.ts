@@ -1110,6 +1110,14 @@ export interface EngineHooks {
    * `mapName` is an archive path, exactly as the campaign index spells it.
    */
   changeLevel?(mapName: string, doScoreScreen: boolean): void;
+  /** `Cheat(text)` — feed a line to the same console the typed cheats use. The original
+   *  hands it to `ScrnConsoleProcessCommandString`; its own single-player gate is the scene's
+   *  (`cheatsAllowed`), because our cheats must never touch a networked sim. */
+  cheat?(text: string): void;
+  /** `IsNoVictoryCheat()` — the `itvexesme` bit (CCheatData 0x80). */
+  isNoVictoryCheat?(): boolean;
+  /** `IsNoDefeatCheat()` — the `strengthandhonor` bit (CCheatData 0x40). */
+  isNoDefeatCheat?(): boolean;
   /** PauseGame — CustomVictoryDialogBJ freezes a single-player game under its dialog. */
   pauseGame?(flag: boolean): void;
   /** EnableUserUI(false) — hide the HUD (the victory dialog does this in campaigns). */

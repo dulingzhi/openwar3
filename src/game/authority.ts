@@ -5,6 +5,7 @@ import { isHarvestCode } from "../data/races";
 import { ORDER_IDS, orderIdToString } from "../jass/orders";
 import type { TechRegistry } from "../data/techtree";
 import type { UpgradeRegistry } from "../data/upgrades";
+import { CheatFlag } from "../sim/cheats";
 import type { Command } from "./commands";
 import { ApmMeter } from "./apm";
 import { engineFoodCeiling, gameNum, heroReviveCost, type ReviveMode } from "../data/gameplayConstants";
@@ -103,6 +104,9 @@ export class Authority {
     // owns an Authority gets the rule, a headless host and a test world included. See
     // SimWorld.foodRoom and SimWorld.payJobFood.
     this.sim.foodRoom = (owner, need) => {
+      // `pointbreak` — CPlayerWar3::HasFoodCapRoom answers true before it reads either
+      // number (Game.dll 0x6F2668B0 tests CCheatData 0x10 and returns).
+      if (this.sim.cheats.is(CheatFlag.Food)) return true;
       const food = this.foodFor(owner);
       return food.used + need <= food.made;
     };
@@ -647,6 +651,27 @@ export class Authority {
    *
    * Returns whether the command took.
    */
+  /**
+   * `sharpandshiny` — CPlayerUpgrade::IncrementUpgrades for player ids 0..11 (the original
+   * loops all twelve slots, not the playable ones). It walks the upgrade DATABASE, takes the
+   * first `effect` id of each row, skips the engine-internal markers whose id starts `_` or
+   * `-`, and increments that player's level by one, capped at the row's `maxLevel` by our
+   * `setResearchLevel` caller. Repeated use ranks everything up again until the caps are hit.
+   */
+  cheatIncrementUpgrades(): void {
+    for (const d of this.upgrades.all()) {
+      const first = d.effects[0]?.effect ?? "";
+      // The original tests the FIRST effect column only (`v14 = *EffectId(...)`).
+      if (!first || first.startsWith("_") || first.startsWith("-")) continue;
+      for (let player = 0; player < 12; player++) {
+        const level = this.sim.tech?.researchLevel(player, d.id) ?? 0;
+        if (level >= d.maxLevel) continue;
+        this.sim.tech?.setResearchLevel(player, d.id, level + 1);
+      }
+    }
+    this.sim.tech?.invalidate();
+  }
+
   execute(player: number, cmd: Command): boolean {
     const took = this.dispatch(player, cmd);
     if (took) {
@@ -897,7 +922,7 @@ export class Authority {
         // the only test there is, queue or no queue.
         if (isSold || b.building.queue.length === 0) {
           const food = this.foodFor(player);
-          if (def.foodUsed > 0 && food.used + def.foodUsed > food.made) return false;
+          if (!this.sim.cheats.is(CheatFlag.Food) && def.foodUsed > 0 && food.used + def.foodUsed > food.made) return false;
         }
         // A unit the building SELLS comes off its shelf, and hiring is loud — purchaseUnit
         // both depletes the stock and shouts to the creeps. It can still refuse (sold out,
@@ -967,7 +992,7 @@ export class Authority {
         // reaches the head of the altar's queue (SimWorld.payJobFood).
         if (b.building.queue.length === 0) {
           const food = this.foodFor(player);
-          if (def.foodUsed > 0 && food.used + def.foodUsed > food.made) return false;
+          if (!this.sim.cheats.is(CheatFlag.Food) && def.foodUsed > 0 && food.used + def.foodUsed > food.made) return false;
         }
         stash.gold -= cost.gold;
         stash.lumber -= cost.lumber;
@@ -999,7 +1024,7 @@ export class Authority {
         const have = state.researchLevel(player, cmd.upgradeId);
         const next = have + 1;
         if (next > d.maxLevel) return false;
-        if (!state.meets(player, cmd.upgradeId, next - 1)) return false;
+        if (!this.sim.cheats.is(CheatFlag.TechTree) && !state.meets(player, cmd.upgradeId, next - 1)) return false;
         const cost = this.upgrades.cost(cmd.upgradeId, next);
         const stash = this.sim.stashOf(player);
         if (stash.gold < cost.gold || stash.lumber < cost.lumber) return false;

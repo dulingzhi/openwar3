@@ -150,6 +150,18 @@ export function openRows(c: Campaign, p = loadProgress()): CampaignRow[] {
 }
 
 /** Record a mission as finished — everything up to and including `index` is now done. */
+/**
+ * Open every mission of `campaignKey` up to (and including) `index` WITHOUT completing it —
+ * the `motherland` cheat's own effect. The original calls `SetMissionAvailable(c, i, 1)` for
+ * `i = level-1 … 0` (CampaignProfile::SetMissionAvailable); our profile has one counter, and
+ * `completed` is the count of OPEN missions, so the counter itself is the index.
+ */
+export function unlockThrough(campaignKey: string, index: number): void {
+  const p = loadProgress();
+  p[campaignKey] = Math.max(p[campaignKey] ?? 0, Math.max(0, Math.floor(index)));
+  saveProgress(p);
+}
+
 export function markMissionComplete(campaignKey: string, index: number): void {
   const p = loadProgress();
   p[campaignKey] = Math.max(p[campaignKey] ?? 0, index + 1);

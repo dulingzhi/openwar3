@@ -991,6 +991,19 @@ data, or asset behaviour, **consult our sources** and cite what you used.
   that the 2003 UI has no frame for goes in [`src/overrides/`](src/overrides/) — our own FrameDef
   files, layered onto the screen at mount through `mountFdfScreen`'s `overrides` option — and its
   README is the contract.
+- **Cheats:** read [`docs/cheats.md`](docs/cheats.md) before touching
+  [`src/game/cheats.ts`](src/game/cheats.ts), [`src/sim/cheats.ts`](src/sim/cheats.ts) or any
+  `cheat*` door on `RtsController`. The game's `InstallCheats` (Game.dll `0x6F379E10`) is
+  TWENTY registrations behind one `CCheatData` dword (twelve bits at `+4`), and the console
+  names are `SStrHash64` values out of `Units\Telemetry.txt`, not literals — which is why a
+  word must never be invented and the one unrecovered key (`v`, the `PH1.mp3` song) is
+  documented as unrecovered rather than given a fake name. Two rules are the easy ones to get
+  wrong: `whosyourdaddy` keys on the player CONTROLLER (a non-user does 0 to a user; a user's
+  blow is the ORIGINAL amount ×100, not a one-hit kill), and `whoisjohngalt` (abilities) and
+  `synergy` (units/upgrades) are different switches, not two names for one. `thedudeabides`
+  clears cooldowns ONCE, on enable — the bit has no ongoing effect. Cheats are SINGLE PLAYER
+  ONLY (`CGameUI::OnChatSend` feeds the console only when `!NetIsMultiPlayer()`), and our
+  refusal is at four doors; the `Cheat`/`IsNoVictoryCheat`/`IsNoDefeatCheat` natives are live.
 - **Gameplay constants live in one place.** Every number the game itself keeps in `Units\MiscGame.txt` /
   `Units\MiscData.txt` / `Scripts\Blizzard.j` belongs in [`src/data/gameplayConstants.ts`](src/data/gameplayConstants.ts),
   under its **exact file key** (`MISC_GAME.GuardDistance`, `MELEE.MELEE_STARTING_GOLD_V1`). Never re-type such a value as a

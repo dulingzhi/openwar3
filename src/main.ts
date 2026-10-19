@@ -17,7 +17,7 @@ import { mountViewReplayScreen } from "./ui/fdfViewReplay";
 import { creditsMap, loadCampaigns, type Campaign, type CampaignEntry } from "./data/campaigns";
 import { isRoc, setEdition, setMapDataSet } from "./data/edition";
 import {
-  isCampaignOpen, loadDifficulty, markMissionComplete, saveDifficulty, type Difficulty,
+  isCampaignOpen, loadDifficulty, markMissionComplete, saveDifficulty, unlockThrough, type Difficulty,
 } from "./data/campaignProgress";
 import { mountLanScreen, savedPlayerName } from "./ui/fdfLan";
 import { mountLanCreateScreen } from "./ui/fdfLanCreate";
@@ -204,6 +204,10 @@ async function enterMap(bytes: Uint8Array, name: string): Promise<string> {
     // …and the chapter's own "and now play THIS": `ChangeLevel`, which the victory dialog's
     // Continue button reaches whenever the map named a next level (see changeLevel below).
     mapScene.onChangeLevel = (path) => void changeLevel(path);
+    // …and `motherland <campaign> <level>` — the cheat that opens a chapter and plays it. A
+    // match cannot load a map, so the campaign index and its progress profile (this module's)
+    // do the opening and then hand the file back through the same ChangeLevel door.
+    mapScene.onCampaignJump = (campaign, level) => void jumpCampaign(campaign, level);
     // …and the defeat dialog's Restart, which plays THIS map again.
     mapScene.onRestart = (difficulty) => void restartMatch(difficulty);
     mapScene.loadMap(bytes);
@@ -606,6 +610,39 @@ async function changeLevel(mapPath: string): Promise<void> {
   const title = found?.entry.name ?? mapPath.replace(/^.*[\\/]/, "").replace(/\.w3[mx]$/i, "");
   const info = parseMapInfo(bytes, title);
   await startGame(bytes, info, campaignConfig(info, difficulty, title));
+}
+
+/**
+ * `motherland <campaign> <level>` — the classic campaign cheat, the one `InstallCheats`
+ * registers as `RegisterLevelJump` (Telemetry key `s`, params `human`/`1`).
+ *
+ * `CGameWar3::LevelJump` refuses outside a campaign mission and in multiplayer, opens the
+ * campaign, marks missions `0 … level-1` available and `RequestChangeLevel`s to
+ * `Mission<level-1>`'s map (CampaignProfile's own `CampaignFile_V1` profile). The map file is
+ * not this module's to load, so the work is split the way every other chapter start is:
+ * `unlockThrough` is the availability half and `changeLevel` is the load half.
+ */
+async function jumpCampaign(name: string, level: number): Promise<void> {
+  const vfs = resolver.installSource;
+  if (!vfs) return;
+  if (!campaigns.length) campaigns = await loadCampaigns(vfs);
+  const wanted = name.trim().toLowerCase();
+  const found = campaigns.find((c) => {
+    const key = c.key.toLowerCase();
+    return (
+      key === wanted ||
+      key.slice(key.lastIndexOf(".") + 1) === wanted || // RoC.Human → human
+      c.name.toLowerCase() === wanted ||
+      c.header.toLowerCase() === wanted
+    );
+  });
+  if (!found || !found.missions.length) return;
+  // `v8 = level != 0 ? level - 1 : 0`: level is 1-based, and 0 means the first mission.
+  const index = Math.max(0, Math.min(Math.floor(level) - 1, found.missions.length - 1));
+  const mission = found.missions[index];
+  if (!mission?.playable) return;
+  unlockThrough(found.key, index);
+  await changeLevel(mission.file);
 }
 
 /**

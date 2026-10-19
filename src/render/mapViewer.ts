@@ -43,6 +43,9 @@ import type { Instance as RtsInstance } from "../game/rts";
 import type { MatchLinkSetup } from "../game/matchLink";
 import type { ScoreRow, ScoreTable } from "../game/scoreTable";
 import { unitSnapshot, unitSnapshots } from "../game/jassHooks";
+import { CHEAT_SONG_FILE, runCheat, type CheatHost } from "../game/cheats";
+import { CheatFlag } from "../sim/cheats";
+import { setMaxFps } from "./frameCap";
 import { SoundBoard } from "../audio/sounds";
 import { VoiceChat } from "../audio/voiceChat";
 import { onVoiceControlChange, setVoiceHost, voiceControlOn } from "../voice/control";
@@ -1438,6 +1441,10 @@ export class MapViewerScene {
    *  named map (src/main.ts `changeLevel`). See Runtime.changeLevel for why this is a
    *  different exit from `onExit`. */
   onChangeLevel: ((mapName: string) => void) | null = null;
+  /** `motherland <campaign> <level>` — the classic campaign jump. The campaign index and the
+   *  progress profile live in main.ts (nothing here can load a chapter), so the raw request
+   *  is handed over and the owner opens the chapter and ChangeLevels to it. */
+  onCampaignJump: ((campaign: string, level: number) => void) | null = null;
   /** `RestartGame` — the defeat dialog's Restart. The same map again, from the top, at the
    *  difficulty the match is on NOW: "Reduce Difficulty" is that button with one
    *  `SetGameDifficulty` in front of it, so the rung has to travel with the restart
@@ -3581,32 +3588,21 @@ export class MapViewerScene {
         if (this.onChangeLevel) this.onChangeLevel(mapName);
         else this.onExit?.(null); // nobody owns a campaign here (a lone map, a test boot)
       },
+      // `Cheat(text)` — the map's own door to the console. The original hands it straight to
+      // ScrnConsoleProcessCommandString; ours goes through the same single-player gate as a
+      // typed line, because a cheat that touched a networked sim would desync it.
+      cheat: (text) => {
+        this.typedCheat(text);
+      },
+      // The two switches blizzard.j's AllowVictoryDefeat reads. They are the cheat bits
+      // `itvexesme` / `strengthandhonor`, so the end-game path and the natives agree.
+      isNoVictoryCheat: () => this.rts?.simWorld.cheats.is(CheatFlag.NoVictory) ?? false,
+      isNoDefeatCheat: () => this.rts?.simWorld.cheats.is(CheatFlag.NoDefeat) ?? false,
       // RemovePlayer(p, PLAYER_GAME_RESULT_*) — blizzard.j's own "this player's game is over",
       // called by CustomVictoryBJ/CustomDefeatBJ before either of them shows anything. Recorded
       // rather than acted on HERE: the wire must not close until the dialog relay below has run,
       // or the loser would never be handed the screen that says why (Phase G item 1).
-      playerGameOver: (player, result) => {
-        // `Scripts\common.j`, verified in War3.mpq AND War3x.mpq (identical):
-        //   PLAYER_GAME_RESULT_VICTORY = 0, _DEFEAT = 1, _TIE = 2, _NEUTRAL = 3
-        // DEFEAT is the ONLY one that leaves the match running — victory is declared in melee
-        // only when every opponent is out, and a tie or a neutral game-over ends it outright.
-        // So the test is written as "anything but defeat", not as "equals victory": a tie that
-        // left the wire up would leave it up forever.
-        const PLAYER_GAME_RESULT_VICTORY = 0;
-        const PLAYER_GAME_RESULT_DEFEAT = 1;
-        if (result !== PLAYER_GAME_RESULT_DEFEAT) {
-          this.matchDecided = true;
-          // …and the score screen stops counting here, Continue Game or not (MatchStats.endedAt).
-          const sim = this.rts?.simWorld;
-          sim?.stats.freeze(sim.elapsed);
-        }
-        this.playersOut.add(player);
-        this.gameResults.set(player, result); // the score screen's gold plate is a VICTORY
-
-        // A campaign chapter is "completed" exactly when its own script declares the local
-        // player the winner — the same signal, read for a different reason.
-        if (result === PLAYER_GAME_RESULT_VICTORY && player === this.localPlayer) this.onLocalVictory?.();
-      },
+      playerGameOver: (player, result) => this.recordPlayerGameOver(player, result),
       pauseGame: (flag) => (this.scriptPaused = flag),
       // EnableUserUI hides EVERYTHING, interface and all — blizzard.j calls it before each
       // cinematic fade (the filter covers the world, not the UI, so the UI has to go). It is
@@ -10001,27 +9997,65 @@ export class MapViewerScene {
 
   /**
    * A typed cheat code, the way the original takes them: the WHOLE chat line, any case, and
-   * never sent as chat. Answered with the game's own `CHEATENABLED`/`CHEATDISABLED` line
-   * (GlobalStrings.fdf). Single player only — in any other match the line is ordinary chat.
+   * never sent as chat. Single player only — in any other match the line is ordinary chat.
+   * The command table, its parameters and every handler live in game/cheats.ts; this method
+   * is only the host that answers them (and the `=` repeat, `ProcessCommand::s_lastCommand`).
    *
-   * `toolsofthetrade` is OURS (it opens the dev tools panel); the other three are the
-   * original game's `whosyourdaddy`, `riseandshine` and `lightsout`.
+   * `toolsofthetrade` is OURS (it opens the dev tools panel) and is handled before the table.
    */
   private typedCheat(text: string): boolean {
     if (!this.cheatsAllowed || !this.rts) return false;
-    const code = text.trim().toLowerCase();
-    let on = true; // the clock cheats are one-shots, and always "enabled"
-    if (code === "toolsofthetrade") on = this.hud?.toggleDevTools() ?? false;
-    else if (code === "whosyourdaddy") {
-      on = this.rts.cheat("godmode");
-      this.hud?.markCheat("godmode", on);
+    const line = text.trim();
+    if (line.toLowerCase() === "toolsofthetrade") {
+      const on = this.hud?.toggleDevTools() ?? false;
+      this.hud?.showMessage(this.globalStrings?.strings.get(on ? "CHEATENABLED" : "CHEATDISABLED") ?? (on ? "Cheat enabled!" : "Cheat disabled!"), -1);
+      return true;
     }
-    else if (code === "riseandshine") this.rts.cheat("day");
-    else if (code === "lightsout") this.rts.cheat("night");
-    else return false;
-    const key = on ? "CHEATENABLED" : "CHEATDISABLED";
-    this.hud?.showMessage(this.globalStrings?.strings.get(key) ?? (on ? "Cheat enabled!" : "Cheat disabled!"), -1);
+    // `ProcessCommand`'s "=" repeats `s_lastCommand`; ours is the last line that PARSED.
+    const command = runCheat(this.cheatHost(), line === "=" ? this.lastCheatLine : line);
+    if (!command) return false;
+    if (line !== "=") this.lastCheatLine = line;
+    // The dev drawer has buttons for two of the toggles; keep them lit in step.
+    const cheats = this.rts.simWorld.cheats;
+    if (command.flag === CheatFlag.God) this.hud?.markCheat("godmode", cheats.is(CheatFlag.God));
+    if (command.flag === CheatFlag.FastBuild) this.hud?.markCheat("fastbuild", cheats.is(CheatFlag.FastBuild));
     return true;
+  }
+
+  /** The last cheat line that parsed — `ProcessCommand`'s `s_lastCommand`. */
+  private lastCheatLine = "";
+
+  /** What game/cheats.ts's commands need of a running match: the sim's dword, the controller's
+   *  economy/cooldown/tech doors, and the three things only the scene can do (fog, campaign,
+   *  the sound board). Every door refuses on the wire; the cheat itself is single player. */
+  private cheatHost(): CheatHost {
+    const rts = this.rts!;
+    const sim = rts.simWorld;
+    return {
+      networked: rts.networked,
+      localPlayer: this.localPlayer,
+      playablePlayers: this.scoreSeats.map((s) => s.id),
+      campaign: this.campaign,
+      cheats: sim.cheats,
+      addGold: (p, n) => rts.cheatAddGold(p, n),
+      addLumber: (p, n) => rts.cheatAddLumber(p, n),
+      clearCooldowns: () => rts.cheatClearCooldowns(),
+      incrementUpgrades: () => rts.cheatIncrementUpgrades(),
+      setTimeOfDay: (hour) => rts.cheatSetTimeOfDay(hour),
+      haltTimeOfDay: (on) => rts.cheatHaltTimeOfDay(on),
+      setRevealAll: (on) => rts.cheatSetRevealAll(on),
+      // The card and the resource bar read live sim state each frame; there is no cached
+      // view to rebuild here (the original's CGameUI::Refresh does have one).
+      refreshUi: () => {},
+      showCheatMessage: (on) => {
+        const key = on ? "CHEATENABLED" : "CHEATDISABLED";
+        this.hud?.showMessage(this.globalStrings?.strings.get(key) ?? (on ? "Cheat enabled!" : "Cheat disabled!"), -1);
+      },
+      jumpCampaign: (campaign, level) => this.onCampaignJump?.(campaign, level),
+      endGameForLocalPlayer: (victory) => this.cheatEndGame(victory),
+      setMaxFps: (n) => setMaxFps(n),
+      playSong: () => this.sounds?.playMusic(CHEAT_SONG_FILE),
+    };
   }
 
   /** A player's display label — the lobby name, as the owner line and the Allies rows use. */
@@ -10446,6 +10480,58 @@ export class MapViewerScene {
    * The words are the GAME'S (`UI\FrameDef\GlobalStrings.fdf`), not ours, so a localized
    * install says what it says; the literals are the fallback for a table that never loaded.
    */
+  /**
+   * The ENGINE half of a player's game being over — `RemovePlayer(p, result)` (common.j) and
+   * the engine's own DispatchPlayerVictory/Defeat, which raise the player event.
+   *
+   * Kept as one method so the script's `RemovePlayer` hook and the two cheat commands share
+   * exactly the same bookkeeping: the score screen's gold plate, the freeze on the stats, the
+   * campaign's "this chapter is complete" signal, and the set that says somebody is out.
+   * `Scripts\common.j`, verified in War3.mpq AND War3x.mpq (identical):
+   * PLAYER_GAME_RESULT_VICTORY = 0, _DEFEAT = 1, _TIE = 2, _NEUTRAL = 3.
+   * DEFEAT is the ONLY one that leaves the match running — victory is declared in melee only
+   * when every opponent is out, and a tie or a neutral game-over ends it outright. So the
+   * test is written as "anything but defeat", not as "equals victory".
+   */
+  private recordPlayerGameOver(player: number, result: number): void {
+    const PLAYER_GAME_RESULT_VICTORY = 0;
+    const PLAYER_GAME_RESULT_DEFEAT = 1;
+    if (result !== PLAYER_GAME_RESULT_DEFEAT) {
+      this.matchDecided = true;
+      // …and the score screen stops counting here, Continue Game or not (MatchStats.endedAt).
+      const sim = this.rts?.simWorld;
+      sim?.stats.freeze(sim.elapsed);
+    }
+    this.playersOut.add(player);
+    this.gameResults.set(player, result); // the score screen's gold plate is a VICTORY
+
+    // A campaign chapter is "completed" exactly when its own script declares the local
+    // player the winner — the same signal, read for a different reason.
+    if (result === PLAYER_GAME_RESULT_VICTORY && player === this.localPlayer) this.onLocalVictory?.();
+  }
+
+  /**
+   * `allyourbasearebelongtous` / `somebodysetusupthebomb` — CPlayerWar3::DispatchPlayerVictory
+   * and ::DispatchPlayerDefeat. The original raises the PLAYER event (common.j
+   * EVENT_PLAYER_VICTORY = 14, EVENT_PLAYER_DEFEAT = 13) and then marks the result; blizzard.j
+   * listens to DEFEAT and runs its whole "share the units out, MeleeDoDefeat" path, whose
+   * `AllowVictoryDefeat` is gated by the no-victory/no-defeat cheats in turn. We do both halves
+   * in that order so a map's own triggers see the event too.
+   */
+  private cheatEndGame(victory: boolean): void {
+    const interp = this.mapScript?.interp;
+    interp?.firePlayerEvent(this.localPlayer, victory ? 14 : 13);
+    this.recordPlayerGameOver(this.localPlayer, victory ? 0 : 1);
+    // The DEFEAT event is blizzard.j's own: MeleeTriggerActionPlayerDefeated shares the
+    // units out and calls MeleeDefeatDialogBJ. Nothing in blizzard.j listens to VICTORY, so
+    // the win has to put up the same screen MeleeDoVictoryEnum would — unless the map's own
+    // trigger already raised one in response to the event above.
+    if (victory && !this.remoteDialog) {
+      this.showVictoryDialog();
+      this.showDialog(this.remoteDialog);
+    }
+  }
+
   showMatchOver(): void {
     // A match that ENDED does not also get disconnected. Once the victory/defeat screen is up
     // this machine hangs up on purpose (Phase G item 1), and on the host that closes the room —
@@ -10463,28 +10549,36 @@ export class MapViewerScene {
     const s = (key: string, fallback: string): string => this.globalStrings?.strings.get(key) ?? fallback;
     // "%s has left the game." — said of the leaver by every route that removes one.
     if (this.hostSeat !== null) this.announce(fillSlots(s("PLAYER_LEFT_GAME", "%s has left the game."), [this.playerLabel(this.hostSeat)]));
-    const quit = (text: string): DialogObj["buttons"][number] =>
-      ({ handleId: -3, dialogId: -1, text, hotkey: localizedHotkey(text), quit: true, doScoreScreen: true });
     if (this.observer) {
       this.observerOverRaised = true;
       this.remoteDialog = this.observerGameOver();
       this.sounds?.playUi("QuestFailed"); // bj_defeatDialogSound
     } else {
-      // MeleeVictoryDialogBJ: "%s was victorious." from the winner, then the screen, to
-      // bj_victoryDialogSound ("QuestCompleted", blizzard.j InitBlizzardGlobals).
-      this.announce(fillSlots(s("PLAYER_VICTORIOUS", "%s was victorious."), [this.playerLabel(this.localPlayer)]));
-      this.remoteDialog = {
-        handleId: -1, message: s("GAMEOVER_VICTORY_MSG", "Victory!"),
-        buttons: [
-          { handleId: -2, dialogId: -1, text: s("GAMEOVER_CONTINUE_GAME", "Continue Game"), hotkey: localizedHotkey(s("GAMEOVER_CONTINUE_GAME", "Continue Game")), quit: false, doScoreScreen: false },
-          quit(s("GAMEOVER_QUIT_GAME", "Quit Game")),
-        ],
-        visibleFor: new Set([this.localPlayer]), revision: 0,
-      };
-      this.sounds?.playUi("QuestCompleted");
+      this.showVictoryDialog();
     }
     // Shown now rather than on the next script-UI pass, which a match with no script never runs.
     this.showDialog(this.remoteDialog);
+  }
+
+  /**
+   * `MeleeVictoryDialogBJ`: "%s was victorious." from the winner, then the screen, to
+   * bj_victoryDialogSound ("QuestCompleted", blizzard.j InitBlizzardGlobals). One builder for
+   * `showMatchOver` and the `allyourbasearebelongtous` cheat, so the two cannot drift.
+   */
+  private showVictoryDialog(): void {
+    const s = (key: string, fallback: string): string => this.globalStrings?.strings.get(key) ?? fallback;
+    const quit = (text: string): DialogObj["buttons"][number] =>
+      ({ handleId: -3, dialogId: -1, text, hotkey: localizedHotkey(text), quit: true, doScoreScreen: true });
+    this.announce(fillSlots(s("PLAYER_VICTORIOUS", "%s was victorious."), [this.playerLabel(this.localPlayer)]));
+    this.remoteDialog = {
+      handleId: -1, message: s("GAMEOVER_VICTORY_MSG", "Victory!"),
+      buttons: [
+        { handleId: -2, dialogId: -1, text: s("GAMEOVER_CONTINUE_GAME", "Continue Game"), hotkey: localizedHotkey(s("GAMEOVER_CONTINUE_GAME", "Continue Game")), quit: false, doScoreScreen: false },
+        quit(s("GAMEOVER_QUIT_GAME", "Quit Game")),
+      ],
+      visibleFor: new Set([this.localPlayer]), revision: 0,
+    };
+    this.sounds?.playUi("QuestCompleted");
   }
 
   /**
@@ -11553,7 +11647,9 @@ export class MapViewerScene {
       if (next > d.maxLevel) continue; // fully researched — the button is gone, as in WC3
       const cost = this.upgrades.cost(upId, next);
       const tier = next - 1; // requirement tier is 0-based on the LEVEL for an upgrade
-      const metTech = !state || state.meets(this.localPlayer, upId, tier);
+      // `synergy` makes every upgrade's prerequisites met, so the card stays lit exactly as
+      // CAbilityResearch::HasDep would answer (Game.dll 0x6F419D10).
+      const metTech = this.rts?.simWorld.cheats.is(CheatFlag.TechTree) || !state || state.meets(this.localPlayer, upId, tier);
       const afford = stash.gold >= cost.gold && stash.lumber >= cost.lumber;
       out.push(this.cmd({
         id: `research:${upId}`,

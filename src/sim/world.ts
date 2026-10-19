@@ -13,6 +13,7 @@ import { type TechRegistry } from "../data/techtree";
 import { RACE_INDEX, workerProfileFor, harvestAbilityOf, type PlayableRace } from "../data/races";
 import { type UpgradeRegistry } from "../data/upgrades";
 import { TechState } from "./tech";
+import { CheatFlag, CheatState } from "./cheats";
 import {
   ENABLED_ATTACK_INDEX,
   slowedAttack,
@@ -3898,17 +3899,24 @@ export class SimWorld {
   // renderer plays the unit's own attack/fire sound (the SND "K" event on its model:
   // rifleman gunshot, mortar boom, dragon breath). Distinct from the landed-hit clang.
   private attackSwings: number[] = [];
-  // Debug cheat: when true, construction + unit training complete in ~1 second
-  // (any build time is compressed to one second), regardless of builders present.
-  fastBuild = false;
   /**
-   * Debug cheat, `whosyourdaddy`'s "God mode": the players listed here take NO damage and
-   * kill whatever they hit in one blow — attacks and spells alike, which is how the original
-   * cheat plays. Keyed on the OWNER, so a unit trained after it is switched on is covered too.
-   * Only the single-player dev tools ever fill it (RtsController.cheat); a networked match
-   * refuses every cheat, so nothing here has to be agreed between machines.
+   * The cheat dword (src/sim/cheats.ts). WC3's `CCheatData+4`: every cheat handler in
+   * `InstallCheats` is one bit of it, and the consumers below ask it exactly where the
+   * original asks its own — damage, mana, supply, tech, decay. Only the single-player
+   * console (`RtsController.cheat`) ever writes it; a LAN match cannot, which is the
+   * original's own rule (`CGameUI::OnChatSend` feeds the console only when
+   * `!NetIsMultiPlayer()`).
    */
-  readonly godPlayers = new Set<number>();
+  readonly cheats = new CheatState();
+  /** Debug cheat: when true, construction + unit training complete in ~1 second
+   *  (any build time is compressed to one second), regardless of builders present.
+   *  `warpten` — CUnit::BuildRate multiplies 1 by `u_16` (16) while the bit is on. */
+  get fastBuild(): boolean {
+    return this.cheats.is(CheatFlag.FastBuild);
+  }
+  set fastBuild(on: boolean) {
+    this.cheats.set(CheatFlag.FastBuild, on);
+  }
   // Injected by the game layer: is world point (x,y) currently VISIBLE (not fogged)
   // to `team`? Idle units only auto-acquire enemies their team can actually see —
   // WC3 units never aggro a target hidden in the fog of war (issue #17). Defaults to
@@ -4128,6 +4136,9 @@ export class SimWorld {
    *  `owned` selects the requirement tier (hero #2 needs a Keep). Always true with no tech
    *  registry loaded. */
   canMake(player: number, unitId: string, owned = 0): boolean {
+    // `synergy` — CAbilityTrain/Queue/SellUnit::HasDep return true before asking the
+    // tech tree at all (Game.dll 0x6F419Cxx/0x6F419Dxx).
+    if (this.cheats.is(CheatFlag.TechTree)) return true;
     return !this.tech || this.tech.canMake(player, unitId, owned);
   }
 
@@ -4146,6 +4157,17 @@ export class SimWorld {
     // real, and it is the neutral owner that is exempt from it, not the row. A CHARMED or
     // HIRED creep carries the exemption with it (SimUnit.mercenary, `unitMeets`).
     if (player < 0) return true;
+    // The two cheat switches, exactly as the original splits them:
+    //   `synergy` (0x400)       — units/upgrades/shop units ignore their requirements
+    //                             (CAbilityBaseBuild/Queue/Research/SellUnit/Train/Morph::HasDep)
+    //   `whoisjohngalt` (0x100) — ABILITIES ignore theirs (CAbility::HasDep, CAbilityHero::HasDep)
+    // The id decides which switch applies: an ability registry row is an ability, everything
+    // else (a unit, an upgrade, a shop item) is the tech tree's.
+    if (this.abilities?.get(id)) {
+      if (this.cheats.is(CheatFlag.Research)) return true;
+    } else if (this.cheats.is(CheatFlag.TechTree)) {
+      return true;
+    }
     return !this.tech || this.tech.meets(player, id);
   }
 
@@ -4272,6 +4294,20 @@ export class SimWorld {
       this.stash.set(owner, s);
     }
     return s;
+  }
+
+  /**
+   * `thedudeabides` — UnitApplyCooldownCheat walks EVERY CAbilitySpell in the world
+   * (`AgileEnumAgents(CAbilitySpell::GetIdentity(), …, descendants: 1)`) and kills its
+   * cooldown timer. It is the whole effect of the flag: there is no ongoing "no cooldowns"
+   * bit in the original, which is why a spell cast a second later still goes on cooldown.
+   * Item abilities are CAbilitySpell descendants too, so the belt is cleared with the card.
+   */
+  clearAllCooldowns(): void {
+    for (const u of this.units.values()) {
+      for (const a of u.abilities) a.cooldownLeft = 0;
+      for (const it of u.inventory) if (it) it.cooldownLeft = 0;
+    }
   }
 
   /**
@@ -5135,8 +5171,9 @@ export class SimWorld {
     if (this.raising(shop)) return "no"; // a Tavern hires nobody until it is finished
     if (!this.canUseShop(shopId, player)) return "no"; // nobody hires out of an enemy's shipyard
     if (this.shopStock(shopId, unitId) === 0) return "nostock"; // -1 = not stock-limited
-    // Only a sold HERO is requirement-gated — see soldUnitNeedsTech.
-    if (this.tech && this.soldUnitNeedsTech(unitId) && !this.tech.meets(player, unitId)) return "req";
+    // Only a sold HERO is requirement-gated — see soldUnitNeedsTech. `synergy` skips the
+    // gate, as CAbilitySellUnit::HasDep does (Game.dll 0x6F419DA0).
+    if (this.tech && !this.cheats.is(CheatFlag.TechTree) && this.soldUnitNeedsTech(unitId) && !this.tech.meets(player, unitId)) return "req";
     if (!this.takeStock(shop, unitId)) return "nostock";
     // Whoever of the buyer's units is nearest the shop takes the blame for the noise. NOT
     // shopPatrons(), which only returns inventory-holders — you don't need a hero to hire a
@@ -5550,7 +5587,7 @@ export class SimWorld {
       inventory: u.inventory.map((it) => (it ? { ...it } : null)),
       baseStr: u.baseStr, baseAgi: u.baseAgi, baseInt: u.baseInt, baseMaxHp: u.baseMaxHp,
       x: u.x, y: u.y, revivingAt: 0,
-      bodyLeft: heroBodyTime(this.unitReg?.get(u.typeId)?.deathTime ?? 0),
+      bodyLeft: this.decayTime(heroBodyTime(this.unitReg?.get(u.typeId)?.deathTime ?? 0)),
     });
   }
 
@@ -8645,7 +8682,9 @@ export class SimWorld {
     // A PERMANENT one pays nothing and can never go out (see recomputeStats). Skipping both
     // clauses is not a shortcut: its `DataB`/`DataC` are 0, so the buffer test would read
     // "mana ≤ 0" and douse the Infernal's fire on the first tick — it has no mana pool at all.
-    if (def.code !== "ANpi") {
+    // `thereisnospoon`: CBuffImmolation::Initialize/Refresh skip their negative ManaModifier
+    // when the bit is on, so the fire never costs anything and never douses itself.
+    if (def.code !== "ANpi" && !this.cheats.is(CheatFlag.Mana)) {
       u.mana -= this.dataOf(lvl, 1, 7) * dt; // DataB "Mana Drained per Second"
       // DataC "Buffer Mana Required": it goes out on its own once the pool is this low, which
       // is what stops Immolation draining a Demon Hunter to zero and leaving him spell-less.
@@ -13175,7 +13214,10 @@ export class SimWorld {
     for (const b of u.buffs) {
       if (b.group === SELF_INVIS_GROUP.AOwk) windWalk = true; // either half — see SimUnit.windWalk
       if (b.kind === "armor") armorBonus += b.value;
-      else if (b.kind === "manaRegen") manaRegenBonus += b.value;
+      // `thereisnospoon` — CBuffManaDrain::ApplyManaCheat refuses to install its negative
+      // regen modifier on the drained unit, so a Siphon Mana takes nothing (the positive
+      // half on the caster still arrives: the cheat is about the CHEATER's mana).
+      else if (b.kind === "manaRegen" && !(b.value < 0 && b.group === DRAIN_GROUP && this.cheats.is(CheatFlag.Mana))) manaRegenBonus += b.value;
       else if (b.kind === "damage") damageBonus += b.value;
       else if (b.kind === "damagePct") damagePct += b.value; // Command/Trueshot Aura
       else if (b.kind === "hpRegen") hpRegenBonus += b.value; // Unholy Aura
@@ -13815,7 +13857,7 @@ export class SimWorld {
   private defendStance(u: SimUnit): AbilityLevel | null {
     const ab = u.abilities.find((a) => a.code === "Adef" && a.level >= 1 && a.autocastOn);
     if (!ab || !this.abilities) return null;
-    if (this.tech && !this.tech.meets(u.owner, ab.id)) return null; // Rhde not researched
+    if (!this.unitMeets(u, ab.id)) return null; // Rhde not researched (or whoisjohngalt)
     const def = this.abilityDefOf(ab);
     return def?.levelData[0] ?? null;
   }
@@ -14055,7 +14097,7 @@ export class SimWorld {
     for (const s of shields) {
       if (s.holder.hp <= 0) continue;
       for (const t of this.unitsInAreaInternal(s.holder.x, s.holder.y, s.radius)) {
-        if (t === s.holder || t.hp <= 0 || t.building || t.invulnerable || this.godProtected(t)) continue;
+        if (t === s.holder || t.hp <= 0 || t.building || t.invulnerable || this.godBlocks(t, s.killerId)) continue;
         t.hp -= s.dps * dt; // spell damage — no armor reduction
         this.breakItemRegen(t); // "hit by a spell which does damage" — see breakItemRegen
         if (t.hp <= 0) this.kill(t, s.killerId);
@@ -14515,7 +14557,7 @@ export class SimWorld {
       // `<Advc,DataB1>` for the damage. (The Kodo's says `DataC1` — that slot is `Dev3`
       // "Maximum Creep Level" and is Blizzard's own typo, invisible because both are 5.)
       const lvl = this.passiveLevelData(u, "Advc");
-      if (!this.godProtected(prey)) prey.hp -= (lvl ? this.dataOf(lvl, 1, 5) : 5) * dt;
+      if (!this.godBlocks(prey, u.id)) prey.hp -= (lvl ? this.dataOf(lvl, 1, 5) : 5) * dt;
       this.breakItemRegen(prey); // being digested is being damaged — see breakItemRegen
       if (prey.hp <= 0) { u.devouring = 0; this.kill(prey, u.id); }
     }
@@ -15061,6 +15103,20 @@ export class SimWorld {
     return !!carried && this.dataOf(carried.level, 3) === 1;
   }
 
+  /** `CUnit::EnoughMana`'s first line: the `thereisnospoon` cheat answers yes for every
+   *  cost, which is why the button stays lit on an empty bar. */
+  private enoughMana(u: SimUnit, cost: number): boolean {
+    // `!(mana < cost)` rather than `mana >= cost`: the original's gate is the former, and the
+    // difference is a NaN pool, which a headless stub can have and which must not turn into a
+    // refusal the pre-cheat code never made.
+    return cost <= 0 || this.cheats.is(CheatFlag.Mana) || !(u.mana < cost);
+  }
+
+  /** `CUnit::SpendMana`: with the cheat on nothing is taken, but the cast still happens. */
+  private spendMana(u: SimUnit, cost: number): void {
+    if (!this.cheats.is(CheatFlag.Mana)) u.mana -= cost;
+  }
+
   /** WHY this unit can't cast this ability AT ALL right now, target or no target — the
    *  caster-side half of `castError`, in the engine's own order: does it have the spell,
    *  is it able to cast, is the spell ready, can it pay. A commandstrings.txt [Errors]
@@ -15112,7 +15168,7 @@ export class SimWorld {
     // morphIsPermanent) — a Destroyer is not a statue that can go back.
     if (this.isFormToggle(def) && this.morphIsPermanent(lvl) && def.levelData.some((l) => altFormOf(l) === u.typeId)) return SILENT_REFUSAL;
     if (ab.cooldownLeft > 0) return "Cooldown"; // "Spell is not ready yet."
-    if (u.mana < this.castCost(u, def, lvl)) return "Nomana"; // "Not enough mana."
+    if (!this.enoughMana(u, this.castCost(u, def, lvl))) return "Nomana"; // "Not enough mana."
     // …and a PAID morph asks the purse, with the lines a Slaughterhouse asks a new statue with.
     const price = this.morphPriceOf(lvl);
     if (price) {
@@ -15477,7 +15533,7 @@ export class SimWorld {
    * cost is actually incurred and where a shot that never lands must cost nothing.
    */
   private issueArrowShot(u: SimUnit, ab: SimAbility, lvl: AbilityLevel, targetId: number): boolean {
-    if (ab.cooldownLeft > 0 || u.mana < lvl.cost) return false;
+    if (ab.cooldownLeft > 0 || !this.enoughMana(u, lvl.cost)) return false;
     if (!this.issueAttack(u.id, targetId, true, true)) return false; // forced: it is a command
     u.arrowShot = { code: ab.code, targetId };
     return true;
@@ -15493,8 +15549,8 @@ export class SimWorld {
    *  nobody, and neither does anything in IMMEDIATE, so all of them pass none. */
   private castImmediate(u: SimUnit, ab: SimAbility, def: AbilityDef, lvl: AbilityLevel, targetId = 0): boolean {
     const cost = this.castCost(u, def, lvl);
-    if (ab.cooldownLeft > 0 || u.mana < cost) return false;
-    u.mana -= cost;
+    if (ab.cooldownLeft > 0 || !this.enoughMana(u, cost)) return false;
+    this.spendMana(u, cost);
     ab.cooldownLeft = lvl.cooldown;
     // A stand-in PendingCast purely to describe the cast to noteSpell/resolveCast —
     // it is never stored on the unit, so nothing can interrupt or resume it.
@@ -15630,7 +15686,7 @@ export class SimWorld {
       // Gate on affordability up front so the caster never winds up a spell it
       // can't pay for. Mana/cooldown are only COMMITTED at the effect (below), so
       // interrupting the wind-up cancels the spell for free.
-      if (ab.cooldownLeft > 0 || u.mana < lvl.cost) {
+      if (ab.cooldownLeft > 0 || !this.enoughMana(u, lvl.cost)) {
         this.stop(u.id);
         return;
       }
@@ -15690,7 +15746,7 @@ export class SimWorld {
         // Blood Mage mid-cast still wastes the cast). `committed` stops phase 2 from
         // charging a second time. The affordability gate above already ran, so we know
         // it's payable here.
-        u.mana -= lvl.cost;
+        this.spendMana(u, lvl.cost);
         ab.cooldownLeft = lvl.cooldown;
         pc.committed = true;
       }
@@ -15706,7 +15762,7 @@ export class SimWorld {
     // was drained (Mana Burn) mid-wind-up. Abilities that committed at wind-up start
     // (PRECAST_WARNING) already paid, so skip the charge and fire regardless.
     if (!pc.committed) {
-      if (u.mana < lvl.cost || ab.cooldownLeft > 0) {
+      if (!this.enoughMana(u, lvl.cost) || ab.cooldownLeft > 0) {
         this.stop(u.id);
         return;
       }
@@ -15717,7 +15773,7 @@ export class SimWorld {
         this.stop(u.id);
         return;
       }
-      u.mana -= lvl.cost;
+      this.spendMana(u, lvl.cost);
       ab.cooldownLeft = lvl.cooldown;
     }
     pc.fired = true;
@@ -15881,7 +15937,7 @@ export class SimWorld {
       const def = this.abilityDefOf(ab);
       if (!def) continue;
       const lvl = def.levelData[Math.min(ab.level, def.levelData.length) - 1];
-      if (u.mana < lvl.cost) continue;
+      if (!this.enoughMana(u, lvl.cost)) continue;
       // A CREEP's standing orders fire only while its camp is fighting (creepInFight) — a
       // Slow sought out beyond the camp's aggro range would pull the caster after a passer-by
       // the camp never chose, and a Bloodlust or a Frenzy on the camp at rest is a buff
@@ -17810,7 +17866,7 @@ export class SimWorld {
     // the Footman would still stand behind a shield that does nothing.
     const def = this.abilityDefOf(ab);
     const stance = !!def && isStance(def);
-    if (stance && !ab.autocastOn && this.tech && !this.tech.meets(u.owner, ab.id)) return false;
+    if (stance && !ab.autocastOn && !this.unitMeets(u, ab.id)) return false;
     ab.autocastOn = !ab.autocastOn;
     if (ab.autocastOn) for (const other of u.abilities) if (other !== ab) other.autocastOn = false;
     // …and raising it is HEARD, once: `DefendCaster.wav`, reached the way every cast sound is —
@@ -18461,6 +18517,12 @@ export class SimWorld {
 
   // === corpses ==============================================================
 
+  /** `iocainepowder` — CUnit::TaskDecay / TaskDecayBone divide the configured `Misc`
+   *  decay times by `u_16` (16) while the bit is on. The body is gone almost at once. */
+  private decayTime(base: number): number {
+    return this.cheats.is(CheatFlag.FastDeath) ? base / 16 : base;
+  }
+
   /** Leave a corpse for an organic, ground, non-mechanical unit (Liquipedia:
    *  Corpse). Buildings collapse, mechanical units explode, summons vanish, and
    *  air units crash without leaving a raisable ground corpse — none of them do.
@@ -18489,7 +18551,7 @@ export class SimWorld {
       owner: u.owner,
       isHero: u.isHero,
       mechanical: u.mechanical,
-      decayLeft: CORPSE_TOTAL_TIME(),
+      decayLeft: this.decayTime(CORPSE_TOTAL_TIME()),
       raised: false,
       heldBy: 0,
       eatenBy: 0,
@@ -18618,7 +18680,7 @@ export class SimWorld {
       c.heldBy = 0;
       c.x = x;
       c.y = y;
-      c.decayLeft = CORPSE_TOTAL_TIME(); // dropped bodies are fresh again — see above
+      c.decayLeft = this.decayTime(CORPSE_TOTAL_TIME()); // dropped bodies are fresh again — see above
       dropped++;
     }
     return dropped;
@@ -18655,7 +18717,7 @@ export class SimWorld {
     this.corpses.set(this.nextCorpseId, {
       id: this.nextCorpseId, deadId: 0, unitId, x, y, facing, owner,
       isHero: false, mechanical: !!def?.classification.includes("mechanical"),
-      decayLeft: CORPSE_TOTAL_TIME(), raised: false, heldBy, eatenBy: 0, fallingLeft: 0, // never fell: usable at once
+      decayLeft: this.decayTime(CORPSE_TOTAL_TIME()), raised: false, heldBy, eatenBy: 0, fallingLeft: 0, // never fell: usable at once
     });
     this.nextCorpseId++;
   }
@@ -19390,7 +19452,10 @@ export class SimWorld {
   tick(dt: number): void {
     this.elapsed += dt;
     this.stats.tick(dt, this.foodUsedOf); // the score screen's Largest Army sample
-    if (this.dawnDusk && !this.timeOfDaySuspended && !this.eclipse) {
+    // `daylightsavings -1` holds the clock with its own bit: CCheatData 0x800 makes
+    // CGameState::TimeOfDayHaltTime(haltTOD_Script) — a halt OWNER beside the script's
+    // SuspendTimeOfDay, which is why it is a separate condition and not `timeOfDaySuspended`.
+    if (this.dawnDusk && !this.timeOfDaySuspended && !this.eclipse && !this.cheats.is(CheatFlag.HaltTimeOfDay)) {
       this.timeOfDay = (this.timeOfDay + dt * gameHoursPerSec() * this.timeOfDayScale) % dataNum("DayHours");
     }
     // The tech census (who owns what, and so what each player may build) is invalidated
@@ -22912,7 +22977,7 @@ export class SimWorld {
       }
     }
     const orb = pickOrb(candidates);
-    if (orb && orb.lvl.cost > 0) attacker.mana -= orb.lvl.cost; // per-shot cost, spent on the shot
+    if (orb && orb.lvl.cost > 0) this.spendMana(attacker, orb.lvl.cost); // per-shot cost, spent on the shot
     return orb;
   }
 
@@ -23227,6 +23292,10 @@ export class SimWorld {
   }
 
   private applyDamage(target: SimUnit, rawDamage: number, attackerId: number, attackType = AttackType.None, weaponSound = "", ranged = false, splash = false): number {
+    // `CUnit::TakeDamage`'s `originalAmount`: the blow before armour, the damage table and
+    // every other reduction. Only the God cheat reads it (×100 against a non-user), and it
+    // has to survive all the multiplications below.
+    const originalAmount = rawDamage;
     // A Mirror Image illusion swings, connects, and does nothing: AOmi's DataB ("Damage
     // Dealt (%)") is 0. Its sheet still reads like the Blademaster's — the deception is
     // the whole ability — so this is enforced here, at the blow, not by editing its stats.
@@ -23337,7 +23406,11 @@ export class SimWorld {
     for (const b of target.buffs) if (b.kind === "vuln") vuln = Math.max(vuln, b.value);
     const reduction = armorDamageReduction(target.armor);
     const final = this.hardenedSkin(target, rawDamage * typeMult * (1 + vuln) * (1 - reduction), ranged);
-    return this.landDamage(target, this.spiritLinkSplit(target, final), attackerId, true, weaponSound, blow);
+    const split = this.spiritLinkSplit(target, final, attackerId);
+    // Spirit Link hands a share of the blow to the linked units; the God cheat's ×100 is
+    // written against the share THIS call lands, so scale the original by the same ratio.
+    const originalShare = final > 0 ? originalAmount * (split / final) : originalAmount;
+    return this.landDamage(target, split, attackerId, true, weaponSound, blow, originalShare);
   }
 
   /**
@@ -23407,14 +23480,14 @@ export class SimWorld {
   /** Spirit Link (Aspl): `linkShare` of a post-armor hit is spread equally across the linked
    *  group (each living member, including the target, takes an equal share); the rest stays
    *  on the target. Returns the reduced amount the target itself should take. */
-  private spiritLinkSplit(target: SimUnit, dmg: number): number {
+  private spiritLinkSplit(target: SimUnit, dmg: number, attackerId: number): number {
     if (target.linkT <= 0 || target.linkGroup.length < 2 || dmg <= 0) return dmg;
     const members = target.linkGroup.map((id) => this.units.get(id)).filter((u): u is SimUnit => !!u && u.hp > 0);
     if (members.length < 2) return dmg;
     const share = target.linkShare;
     const per = (dmg * share) / members.length; // equal slice for every linked unit
     for (const m of members) {
-      if (m === target || this.godProtected(m)) continue;
+      if (m === target || this.godBlocks(m, attackerId)) continue;
       m.hp -= per; // already post-armor; spirit-shared damage isn't reduced again
       this.breakItemRegen(m); // …and a share is damage: it takes the linked unit's salve with it
       if (m.hp <= 0) this.kill(m);
@@ -23743,18 +23816,48 @@ export class SimWorld {
     return 0;
   }
 
-  /** Is `u` owned by a player with the God mode cheat on (`godPlayers`)? */
-  private godProtected(u: SimUnit | undefined): boolean {
-    return !!u && this.godPlayers.size > 0 && this.godPlayers.has(u.owner);
+  /** Is this a PLAYER seat a person controls? `MAP_CONTROL_USER` is 0; every computer, creep
+   *  and neutral controller is not. The God cheat is written against exactly this split. */
+  private isUserPlayer(player: number): boolean {
+    return player >= 0 && !this.computerPlayers.has(player);
+  }
+
+  /** `whosyourdaddy`'s PROTECTION half, for the few damage paths that do not go through
+   *  `landDamage` (Devour's digest, Spirit Link's share, a shield's tick): a NON-user source
+   *  does nothing to a user's unit. `CUnit::TakeDamage` is the original's single choke point;
+   *  these are ours and must ask the same question. */
+  private godBlocks(target: SimUnit, sourceId: number): boolean {
+    if (!this.cheats.is(CheatFlag.God)) return false;
+    const source = sourceId ? this.units.get(sourceId) : undefined;
+    return !!source && !this.isUserPlayer(source.owner) && this.isUserPlayer(target.owner);
   }
 
   /** Apply FINAL (post-reduction) damage: death, return fire, and (for physical
    *  hits) the impact SFX. Spell damage calls this directly with recordHit=false —
    *  WC3 ability damage ignores the armor value and plays its own effects. Returns
-   *  the HP removed (0 if the target was invulnerable). */
-  private landDamage(target: SimUnit, amount: number, attackerId: number, recordHit: boolean, weaponSound = "", raised: DamageBlow | null = null): number {
+   *  the HP removed (0 if the target was invulnerable).
+   *
+   *  `rawAmount` is the blow BEFORE the attack path's armour/ethereal reductions. It is
+   *  what `whosyourdaddy` multiplies by 100 — `CUnit::TakeDamage` keeps `originalAmount`
+   *  beside the reduced `dmg` for exactly this, and spells/splashes pass the same number
+   *  twice because nothing reduced it on the way in. */
+  private landDamage(target: SimUnit, amount: number, attackerId: number, recordHit: boolean, weaponSound = "", raised: DamageBlow | null = null, rawAmount = amount): number {
     if (target.invulnerable) return 0; // Divine Shield / Avatar: immune to damage
-    if (this.godProtected(target)) return 0; // `whosyourdaddy`: the cheater's units take nothing
+    // `whosyourdaddy` — CUnit::TakeDamage's block, transcribed:
+    //   source computer, target user  -> 0 damage
+    //   source user,     target other -> originalAmount × 100
+    // It keys on the CONTROLLER, not the owner, so a skirmish's human is protected from
+    // its computers and hits them a hundred times as hard; two computers (or two people)
+    // are left alone.
+    if (this.cheats.is(CheatFlag.God)) {
+      const source = attackerId ? this.units.get(attackerId) : undefined;
+      if (source) {
+        const fromUser = this.isUserPlayer(source.owner);
+        const toUser = this.isUserPlayer(target.owner);
+        if (!fromUser && toUser) return 0;
+        if (fromUser && !toUser) amount = rawAmount * 100;
+      }
+    }
     // The script's DAMAGING event, for a blow that did not come through a path which already
     // raised it before its own reductions (the attack, UnitDamageTarget): a spell's, a splash's,
     // an orb's — damage the engine lands as it is, so its "before resistances" is this amount.
@@ -23779,12 +23882,8 @@ export class SimWorld {
     // Placed with the sleep break, i.e. BEFORE the mana shield: being hit is being hit even
     // when a shield eats the blow.
     if (amount > 0) this.breakItemRegen(target);
-    // `whosyourdaddy`'s other half: a blow FROM the cheater is a one-hit kill. Taken before the
-    // Mana Shield, or a shielded Naga would soak the killing blow into her mana.
-    const godBlow = amount > 0 && this.godPlayers.size > 0 && this.godProtected(this.units.get(attackerId));
-    if (godBlow) amount = Math.max(amount, target.hp);
     // Mana Shield (Naga): absorb incoming damage into mana at `value` mana per hp.
-    else amount = this.absorbWithManaShield(target, amount);
+    amount = this.absorbWithManaShield(target, amount);
     if (amount <= 0) return 0;
     if (recordHit) this.hits.push({ attackerId, targetId: target.id, weaponSound, x: target.x, y: target.y });
     this.noteAttacked(target, attackerId); // "The battle has been joined." / "Our town is under siege!"

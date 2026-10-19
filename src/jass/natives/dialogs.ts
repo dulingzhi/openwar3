@@ -117,10 +117,19 @@ export function registerDialogNatives(rt: Runtime): void {
   });
   // EnableUserControl is REAL now (7.24, natives/cinematic.ts) — a cinematic takes the mouse
   // and keyboard away from the player, and hands them back when it ends.
-  // AllowVictoryDefeat gates the whole end-game path on these two. They report the "no
-  // victory"/"no defeat" CHEATS being off — which they are; we implement no cheat codes.
-  def(rt, "IsNoVictoryCheat", () => jBool(false));
-  def(rt, "IsNoDefeatCheat", () => jBool(false));
+  // AllowVictoryDefeat gates the whole end-game path on these two. They report the
+  // `itvexesme` / `strengthandhonor` CHEAT bits (CCheatData 0x80 / 0x40, Game.dll
+  // `IsNoVictoryCheat` / `IsNoDefeatCheat`) — blizzard.j's AllowVictoryDefeat is what makes
+  // the cheat work, so these must be LIVE, not a false literal.
+  def(rt, "IsNoVictoryCheat", (c) => jBool(c.rt.hooks?.isNoVictoryCheat?.() ?? false));
+  def(rt, "IsNoDefeatCheat", (c) => jBool(c.rt.hooks?.isNoDefeatCheat?.() ?? false));
+  // Cheat(text) — the native a map calls to enter a cheat without a chat box. The original
+  // is `ScrnConsoleProcessCommandString` behind a String; ours is the same door the typed
+  // line takes (render/mapViewer.ts typedCheat → game/cheats.ts runCheat).
+  def(rt, "Cheat", (c, a) => {
+    c.rt.hooks?.cheat?.(asStr(a[0]));
+    return JNULL;
+  });
   def(rt, "SetIntegerGameState", () => JNULL); // GAME_STATE_DISCONNECTED etc. — nothing to set
   // RestartGame — the defeat dialog's Restart (and its Reduce Difficulty, which is the same
   // button with a lower difficulty set in front of it). See Runtime.restartGame.
