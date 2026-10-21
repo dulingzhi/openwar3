@@ -79,3 +79,16 @@ export const YD_JAPI: readonly JapiDecl[] = [
   // --- lua_loader.cpp (a JAPI native, not a plugin module) ------------------------------
   { name: "EXExecuteScript", param: "(S)S" },
 ];
+
+/**
+ * The names `yd_jass_api` installs with `japi_hook` rather than `japi_add` (UnitState.cpp:853-854,
+ * EventDamageData.cpp:206). They are EXISTING natives whose behaviour it extends, and the hook
+ * also files them in `japi_function` — so in the original `jass.japi.GetUnitState` resolves to
+ * the same (extended) native `jass.common.GetUnitState` does. We keep that alias here; the
+ * implementation itself is the native wrapper installed by host.ts.
+ */
+export const JAPI_HOOK_ALIASES: readonly JapiDecl[] = [
+  { name: "GetUnitState", param: "(Hunit;I)R" },
+  { name: "SetUnitState", param: "(Hunit;IR)V" },
+  { name: "GetEventDamage", param: "()R" },
+];

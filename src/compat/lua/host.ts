@@ -20,8 +20,8 @@ import { openStub, openStorm } from "./modules/stubs";
 import { open as openCode } from "./modules/code";
 import { open as openSlk } from "./modules/slk";
 import { open as openMessage } from "./modules/message";
-import { YD_JAPI } from "./japi/decl";
-import { registerJapi, type JapiImpl } from "./japi/registry";
+import { JAPI_HOOK_ALIASES, YD_JAPI } from "./japi/decl";
+import { registerJapi, registerJapiAlias, type JapiImpl } from "./japi/registry";
 import { damageImpls } from "./japi/damage";
 import { itemImpls } from "./japi/item";
 import { abilityImpls } from "./japi/ability";
@@ -701,6 +701,9 @@ export function createLuaMapScript(interp: Interpreter, seed: number, options: L
     ...unitImpls(rt),
   };
   for (const decl of YD_JAPI) registerJapi(rt, decl, japiImpls[decl.name]);
+  // The three `japi_hook` names are existing natives with extended behaviour; `jass.japi`
+  // must reach the SAME wrapper `jass.common` does (see decl.ts).
+  for (const decl of JAPI_HOOK_ALIASES) registerJapiAlias(rt, decl);
 
   preloads.set("jass.common", (S) => openCommon(moduleHost, S));
   preloads.set("jass.globals", (S) => openGlobals(moduleHost, S));
