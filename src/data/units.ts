@@ -614,10 +614,16 @@ const FUNC_FILES = [
   "Units\\CampaignUnitFunc.txt",
 ];
 
-export function loadUnitRegistry(vfs: DataSource): UnitRegistry {
+export function loadUnitRegistry(vfs: DataSource, overlay?: DataSource): UnitRegistry {
+  // A map's own SLK tables merge OVER the install's (data/mapOverlay.ts): the overlay's
+  // cells win for a shared row, and a row only the map has joins.
   const table = (path: string): MappedData | null => {
     const bytes = vfs.rawBytes(path);
-    return bytes ? new MappedData(wc3TextDecoder().decode(bytes)) : null;
+    const data = bytes ? new MappedData(wc3TextDecoder().decode(bytes)) : null;
+    const over = overlay?.rawBytes(path);
+    if (over && data) data.load(wc3TextDecoder().decode(over));
+    else if (over) return new MappedData(wc3TextDecoder().decode(over));
+    return data;
   };
   const data = table(SLK.data);
   const balance = table(SLK.balance);
@@ -629,11 +635,15 @@ export function loadUnitRegistry(vfs: DataSource): UnitRegistry {
   for (const path of STRING_FILES) {
     const bytes = vfs.rawBytes(path);
     if (bytes) names.load(wc3TextDecoder().decode(bytes));
+    const over = overlay?.rawBytes(path);
+    if (over) names.load(wc3TextDecoder().decode(over));
   }
   const funcs = new MappedData();
   for (const path of FUNC_FILES) {
     const bytes = vfs.rawBytes(path);
     if (bytes) funcs.load(wc3TextDecoder().decode(bytes));
+    const over = overlay?.rawBytes(path);
+    if (over) funcs.load(wc3TextDecoder().decode(over));
   }
   // …and the player's own hotkeys/tips/slots over the top of both, when Options → Gameplay →
   // "Hotkeys:" is on Custom (data/customKeys.ts). Here, at the table, rather than on each
@@ -1016,7 +1026,10 @@ function list(v: string): string[] {
  * flagged twin the install does not ship falls back to the plain file.
  */
 function unitModelPath(vfs: DataSource, file: string, verFlags: number): string {
-  const base = file.replace(/\//g, "\\");
+  // A map's UnitUI `file` sometimes KEEPS its extension (`war3mapImported\Hero.mdl` —
+  // DSIII's SLK overlay rows do), while the install's never does; strip it so `.mdx`
+  // appends once, exactly as mdxPath below already treats Func-profile paths.
+  const base = file.replace(/\//g, "\\").replace(/\.(mdl|mdx)$/i, "");
   const v = versionIndex();
   const twin = `${base}_V${v}.mdx`;
   return verFlags & (1 << v) && vfs.exists(twin) ? twin : `${base}.mdx`;

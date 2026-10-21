@@ -1,4 +1,5 @@
 import { wc3TextDecoder } from "../vfs/text";
+import { mergedTable } from "./mapOverlay";
 import { MappedData } from "mdx-m3-viewer/dist/cjs/utils/mappeddata";
 import { layCustomKeys } from "./customKeys";
 import type { DataSource } from "../vfs/types";
@@ -176,18 +177,23 @@ interface Row {
   string(key: string): string | undefined;
 }
 
-export function loadItemRegistry(vfs: DataSource): ItemRegistry {
+export function loadItemRegistry(vfs: DataSource, overlay?: DataSource): ItemRegistry {
   const defs = new Map<string, ItemDef>();
-  const bytes = vfs.rawBytes("Units\\ItemData.slk");
-  if (!bytes) return new ItemRegistry(defs);
-  const data = new MappedData(wc3TextDecoder().decode(bytes));
+  // A map's own SLK tables merge OVER the install's (data/mapOverlay.ts) — protected maps
+  // ship their whole object system as SLKs inside the archive (DSIII).
+  const data = mergedTable(vfs, overlay, "Units\\ItemData.slk");
+  if (!data) return new ItemRegistry(defs);
 
   const func = new MappedData();
   const fb = vfs.rawBytes("Units\\ItemFunc.txt");
   if (fb) func.load(wc3TextDecoder().decode(fb));
+  const fo = overlay?.rawBytes("Units\\ItemFunc.txt");
+  if (fo) func.load(wc3TextDecoder().decode(fo));
   const strs = new MappedData();
   const sb = vfs.rawBytes("Units\\ItemStrings.txt");
   if (sb) strs.load(wc3TextDecoder().decode(sb));
+  const so = overlay?.rawBytes("Units\\ItemStrings.txt");
+  if (so) strs.load(wc3TextDecoder().decode(so));
   // The player's own file over both (data/customKeys.ts) — an item's row is a SHOP button, so
   // this is what moves "Purchase Potion of Healing" onto another key and another slot.
   layCustomKeys(strs, func);

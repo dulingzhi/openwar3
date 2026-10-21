@@ -148,6 +148,18 @@ export function buildScriptFrameTree(model: FrameModel, lib: FdfLibrary): Script
   const nameOf = (f: FrameObj): string => (f.instance ? `${f.name}__${f.instance}` : `__f${f.handleId}`);
   for (const f of frames.values()) if (!f.origin && shown(f)) out.names.set(f.handleId, nameOf(f));
 
+  // Origin frames are not drawn by us (the console is our own DOM HUD), but a map's frames
+  // SetPoint AGAINST them — DSIII hangs its whole custom UI off DzGetGameUI() — and a dropped
+  // anchor left the frame at its template's default spot (the pile-up in the top-left corner).
+  // The game UI IS the 4:3 stage box; the other console frames fall back to it too until
+  // someone measures their own boxes off the real console (TODO(console-anchors)).
+  const originAnchor = new Map<number, string>();
+  for (const f of frames.values()) {
+    if (!f.origin) continue;
+    originAnchor.set(f.handleId, SCRIPT_UI_43);
+  }
+  for (const [handle, anchor] of originAnchor) out.names.set(handle, anchor);
+
   /** Lay the script's own changes over a node (a stamped one, or one made by type). */
   const apply = (node: FdfFrame, f: FrameObj, byType: boolean): void => {
     const s = scaleOf(f);
@@ -165,8 +177,8 @@ export function buildScriptFrameTree(model: FrameModel, lib: FdfLibrary): Script
         node.props.push({ key: "SetPoint", args: [word(mine), str(SCRIPT_UI_43), word("BOTTOMLEFT"), num(p.x), num(p.y)] });
         continue;
       }
-      const rel = out.names.get(p.relative);
-      if (!rel) continue; // anchored to a frame that is not drawn (or is the game's own)
+      const rel = out.names.get(p.relative) ?? originAnchor.get(p.relative);
+      if (!rel) continue; // anchored to a frame that is not drawn
       node.props.push({ key: "SetPoint", args: [word(mine), str(rel), word(POINTS[p.relativePoint] ?? mine), num(p.x * s), num(p.y * s)] });
     }
     if (f.textSet) {

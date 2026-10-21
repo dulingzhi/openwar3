@@ -3,6 +3,7 @@ import { MappedData } from "mdx-m3-viewer/dist/cjs/utils/mappeddata";
 import { layCustomKeys } from "./customKeys";
 import type { DataSource } from "../vfs/types";
 import { gameNum } from "./gameplayConstants";
+import { mergedTable } from "./mapOverlay";
 
 // Ability data registry (plan §4, spells slice). Merges WC3's AbilityData.slk
 // (numbers), per-race AbilityFunc.txt (icon/effect art/buttonpos) and
@@ -1302,21 +1303,26 @@ function fillIntrinsicOrders(defs: Map<string, AbilityDef>, vfs: DataSource): st
   return [...new Set(orderOf.values())];
 }
 
-export function loadAbilityRegistry(vfs: DataSource): AbilityRegistry {
+export function loadAbilityRegistry(vfs: DataSource, overlay?: DataSource): AbilityRegistry {
   const defs = new Map<string, AbilityDef>();
-  const bytes = vfs.rawBytes("Units\\AbilityData.slk");
-  if (!bytes) return new AbilityRegistry(defs);
-  const data = new MappedData(wc3TextDecoder().decode(bytes));
+  // A map's own SLK tables merge OVER the install's (data/mapOverlay.ts) — protected maps
+  // ship their whole object system as SLKs inside the archive (DSIII).
+  const data = mergedTable(vfs, overlay, "Units\\AbilityData.slk");
+  if (!data) return new AbilityRegistry(defs);
 
   const func = new MappedData();
   for (const p of FUNC_FILES) {
     const b = vfs.rawBytes(p);
     if (b) func.load(wc3TextDecoder().decode(b));
+    const bo = overlay?.rawBytes(p);
+    if (bo) func.load(wc3TextDecoder().decode(bo));
   }
   const strs = new MappedData();
   for (const p of STRING_FILES) {
     const b = vfs.rawBytes(p);
     if (b) strs.load(wc3TextDecoder().decode(b));
+    const so = overlay?.rawBytes(p);
+    if (so) strs.load(wc3TextDecoder().decode(so));
   }
   // The player's own file over both (data/customKeys.ts), which is where an ability's whole
   // `Un*` family comes from too: `Unhotkey`, `Untip` and `Unbuttonpos` are three of the eleven.

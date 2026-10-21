@@ -76,6 +76,12 @@
     "../src/compat/lua/require.ts",
 
     "../src/data/objectData.ts",
+    "../src/data/mapOverlay.ts",
+    "../src/data/units.ts",
+    "../src/data/abilities.ts",
+    "../src/data/items.ts",
+    "../src/data/techtree.ts",
+    "../src/data/upgrades.ts",
     "../src/sim/alliances.ts",
     "../src/sim/vision.ts",
     "../src/data/weather.ts",

@@ -134,6 +134,7 @@ import { loadTechRegistry, type TechRegistry } from "../data/techtree";
 import { loadUpgradeRegistry, type UpgradeRegistry } from "../data/upgrades";
 import { parseWar3Skins, skinValue, WAR3SKINS } from "../data/war3skins";
 import { MAP_SKIN_FILE, mapSkinOverlay, parseMapSkin, setMapSkinOverlay, type MapSkin } from "../data/mapSkin";
+import { MAP_SLK_PATHS, tolerantSource } from "../data/mapOverlay";
 
 // Our race ids → the section names in the game's own skin table (UI\war3skins.txt), which
 // is what decorates a `DecorateFileNames` frame's textures. WC3 skins the in-game panels
@@ -1527,6 +1528,9 @@ export class MapViewerScene {
   private scriptFrames: ScriptFrameOverlay | null = null; // the map's own BlzCreateFrame UI
   /** `BlzHideOriginFrames(true)` is in force (see syncHudVisible). */
   private originHidden = false;
+  /** DzFrameHideInterface's extra reach — the console art band and the resource strip go too
+   *  (the original moves them off-screen; BlzHideOriginFrames leaves them). */
+  private interfaceArtHidden = false;
   private multiboard: MultiboardOverlay | null = null; // CreateMultiboard — the grid scoreboard (7.22)
   private timerDialogs: TimerDialogOverlay | null = null; // CreateTimerDialog — the countdown windows (7.21)
   private cinematic: CinematicPanelOverlay | null = null; // the letterbox + transmissions + the fade (7.24)
@@ -4083,6 +4087,13 @@ export class MapViewerScene {
         this.originHidden = hide;
         this.syncHudVisible();
       },
+      hideInterface: (hide) => {
+        // DzFrameHideInterface: everything BlzHideOriginFrames takes, PLUS the console art
+        // and the resource strip (the original moves them off-screen — war3japi_gui.cpp:668).
+        this.originHidden = hide;
+        this.interfaceArtHidden = hide;
+        this.syncHudVisible();
+      },
       setConsoleBackdropVisible: (visible) => this.consoleUi?.setBackdropVisible(visible),
       // BlzLoadTOCFile's .toc and .fdf files: the map's archive over the install, synchronously.
       readMapFile: (path) => this.assetFiles().rawBytes(path.replace(/\//g, "\\")),
@@ -4115,6 +4126,21 @@ export class MapViewerScene {
     this.upgrades.clearCustom();
     this.tech.clearCustom();
     if (!this.mapArchive) return;
+    // A protected map can carry its whole object system as TEXT TABLES instead of the binary
+    // w3u/w3a (DSIII ships Units\UnitData.slk and friends — file names stripped, data intact).
+    // Rebuild the five registries with the map archive as an overlay so its rows merge over
+    // the install's, BEFORE the binary custom data (w3u/w3a) is layered on top; the RtsController
+    // and everything else that reads a table is built after this, so the rebuild is safe.
+    const slkPaths = MAP_SLK_PATHS.filter((p) => this.mapArchive?.exists(p));
+    if (slkPaths.length) {
+      const overlay = tolerantSource(this.mapArchive);
+      this.registry = loadUnitRegistry(this.vfs, overlay);
+      this.abilities = loadAbilityRegistry(this.vfs, overlay);
+      this.items = loadItemRegistry(this.vfs, overlay);
+      this.tech = loadTechRegistry(this.vfs, overlay);
+      this.upgrades = loadUpgradeRegistry(this.vfs, overlay);
+      console.info(`[map] map-internal SLK object data merged over the install (${slkPaths.length} table(s), data/mapOverlay.ts).`);
+    }
     // What FORMAT this map is, once, where the map is opened (src/compat/mapFormat.ts). Printed
     // rather than acted on: the versions are the first thing worth knowing about a map that
     // behaves oddly, and every branch that CARES about them is behind a parser.
@@ -11668,7 +11694,7 @@ export class MapViewerScene {
     // resource readout and the Quests/Menu/Allies/Chat buttons) is `ConsoleUI.fdf`, drawn
     // under it by ui/consoleUi.ts. Hiding only the HUD left every cinematic playing behind
     // the full frame with empty holes in it, which is the opposite of a letterbox.
-    this.consoleUi?.setVisible(on);
+    this.consoleUi?.setVisible(on && !this.interfaceArtHidden);
     // …and the WORLD-layer half of the interface: the floating health/mana bars and the hero
     // level badge, which are drawn over the terrain but belong to the UI (see
     // RtsController.updateHealthBars).

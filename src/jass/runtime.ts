@@ -973,6 +973,11 @@ export interface EngineHooks {
   readMapFile?(path: string): Uint8Array | null;
   /** BlzHideOriginFrames — the game's own console furniture (compat/frames.ts says which). */
   hideOriginFrames?(hide: boolean): void;
+  /** DzFrameHideInterface — the DzAPI one is STRONGER than BlzHideOriginFrames: the original
+   *  (war3japi_gui.cpp:668) MOVES the console's parts off-screen — the upper button bar, the
+   *  resource bar, the SimpleUIParent, the whole furniture — so a map's own HUD replaces the
+   *  console entirely. DSIII's NGUI_init calls it once and expects a bare world. */
+  hideInterface?(hide: boolean): void;
   /** BlzFrameSetVisible on `ConsoleUIBackdrop` — the black box behind the bottom console. */
   setConsoleBackdropVisible?(visible: boolean): void;
   /** UnitId / UnitId2String — a unit type by its internal UnitUI `name`, and back. */

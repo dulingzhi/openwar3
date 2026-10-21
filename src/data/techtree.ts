@@ -345,16 +345,21 @@ function mergeRepeatedLists(text: string): string {
   return out.join("\r\n");
 }
 
-export function loadTechRegistry(vfs: DataSource): TechRegistry {
+export function loadTechRegistry(vfs: DataSource, overlay?: DataSource): TechRegistry {
+  // A map's own txt/SLK tables merge OVER the install's (data/mapOverlay.ts).
   const funcs = new MappedData();
   for (const path of FUNC_FILES) {
     const bytes = vfs.rawBytes(path);
     if (bytes) funcs.load(mergeRepeatedLists(wc3TextDecoder().decode(bytes)));
+    const over = overlay?.rawBytes(path);
+    if (over) funcs.load(mergeRepeatedLists(wc3TextDecoder().decode(over)));
   }
   const strs = new MappedData();
   for (const path of STRING_FILES) {
     const bytes = vfs.rawBytes(path);
     if (bytes) strs.load(wc3TextDecoder().decode(bytes));
+    const over = overlay?.rawBytes(path);
+    if (over) strs.load(wc3TextDecoder().decode(over));
   }
   const defs = new Map<string, TechDef>();
   for (const id of Object.keys(funcs.map)) {

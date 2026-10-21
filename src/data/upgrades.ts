@@ -1,4 +1,5 @@
 import { wc3TextDecoder } from "../vfs/text";
+import { mergedTable } from "./mapOverlay";
 import { MappedData } from "mdx-m3-viewer/dist/cjs/utils/mappeddata";
 import { layCustomKeys } from "./customKeys";
 import type { DataSource } from "../vfs/types";
@@ -148,21 +149,25 @@ interface Row {
   string(key: string): string | undefined;
 }
 
-export function loadUpgradeRegistry(vfs: DataSource): UpgradeRegistry {
+export function loadUpgradeRegistry(vfs: DataSource, overlay?: DataSource): UpgradeRegistry {
   const defs = new Map<string, UpgradeDef>();
-  const bytes = vfs.rawBytes("Units\\UpgradeData.slk");
-  if (!bytes) return new UpgradeRegistry(defs);
-  const data = new MappedData(wc3TextDecoder().decode(bytes));
+  // A map's own SLK tables merge OVER the install's (data/mapOverlay.ts).
+  const data = mergedTable(vfs, overlay, "Units\\UpgradeData.slk");
+  if (!data) return new UpgradeRegistry(defs);
 
   const funcs = new MappedData();
   for (const p of UPGRADE_FUNC_FILES) {
     const b = vfs.rawBytes(p);
     if (b) funcs.load(wc3TextDecoder().decode(b));
+    const bo = overlay?.rawBytes(p);
+    if (bo) funcs.load(wc3TextDecoder().decode(bo));
   }
   const strs = new MappedData();
   for (const p of UPGRADE_STRING_FILES) {
     const b = vfs.rawBytes(p);
     if (b) strs.load(wc3TextDecoder().decode(b));
+    const so = overlay?.rawBytes(p);
+    if (so) strs.load(wc3TextDecoder().decode(so));
   }
   // The player's own file over both (data/customKeys.ts). An upgrade is the case CustomKeyInfo
   // spells out a comma list for — "[Rhme] Hotkey=X,Y,Z" is one key per RANK — and `csv` below

@@ -238,7 +238,10 @@ export function frameImpls(rt: Runtime): Record<string, Impl> {
       const g = asInt(a[2] ?? JNULL) & 0xff, b = asInt(a[3] ?? JNULL) & 0xff;
       return jInt((al << 24) | (r << 16) | (g << 8) | b);
     },
-    DzFrameHideInterface: (ctx) => { call(ctx, "BlzHideOriginFrames", [jBool(true)]); return JNULL; },
+    // The Dz hide is the STRONG one (war3japi_gui.cpp:668 moves the console's parts
+    // off-screen — upper button bar, resource bar, SimpleUIParent), not Blz's sockets-only
+    // hide. A map's own HUD (DSIII's ngui) replaces the console and expects a bare world.
+    DzFrameHideInterface: (ctx) => { ctx.rt.hooks?.hideInterface?.(true); return JNULL; },
     DzFrameEditBlackBorders: () => JNULL,
     DzFrameClick: (ctx, a) => { call(ctx, "BlzFrameClick", [H(a[0])]); return JNULL; },
     DzFrameSetFocus: () => JNULL,
