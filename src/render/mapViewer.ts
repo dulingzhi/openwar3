@@ -1270,6 +1270,11 @@ export class MapViewerScene {
   // load. Null when the install can't supply it — the world then keeps the viewer's
   // stock fullbright shading rather than going black.
   private dayNight: DayNightCycle | null = null;
+  // The pair a map's SetDayNightModels named (src/jass/natives/melee.ts). SetDayNightModels
+  // is environment setup the script can call ANY time, and the map's init trigger runs after
+  // load, so the tileset rig is built at load and a script's swap-in REPLACES it (DSIII's
+  // Trig_map_initActions). Read fresh each applyDayNight; cleared on map load.
+  private scriptDayNight: DayNightCycle | null = null;
   private mapFog: DistFog | null = null; // the map's w3i environment fog (distance haze)
   private w3iFog: DistFog | null = null; // …as the w3i declared it — what ResetTerrainFog restores
   // The top-bar day/night medallion — the real UI\Console\<Race>\<Race>UI-TimeIndicator
@@ -2064,6 +2069,7 @@ export class MapViewerScene {
     this.rts?.dispose();
     this.rts = null;
     this.dayNight = null;
+    this.scriptDayNight = null; // the next map's SetDayNightModels must swap its own pair in again
     this.lastMarkerScanCount = -1;
     this.rallyFlag = null;
     this.queueFlagModel = null;
@@ -4095,6 +4101,16 @@ export class MapViewerScene {
         this.syncHudVisible();
       },
       setConsoleBackdropVisible: (visible) => this.consoleUi?.setBackdropVisible(visible),
+      setDayNightModels: (terrain, unit) => {
+        // The pair the script named, read map-archive-first over the install (the same door
+        // BlzLoadTOCFile uses). fromPaths swaps .mdl→.mdx and tolerates a protected archive's
+        // throwing entries (the tolerantSource lesson).
+        this.scriptDayNight = DayNightCycle.fromPaths(
+          (p: string) => this.assetFiles().rawBytes(p.replace(/\//g, "\\")),
+          terrain,
+          unit,
+        );
+      },
       // BlzLoadTOCFile's .toc and .fdf files: the map's archive over the install, synchronously.
       readMapFile: (path) => this.assetFiles().rawBytes(path.replace(/\//g, "\\")),
       unitTypeByName: (name) => {
@@ -11152,11 +11168,18 @@ export class MapViewerScene {
     // above, which is what makes EnableWorldFogBoundary land with no extra plumbing: the
     // mask's own boundary channel goes to zero and the tint stops applying.
     scene.boundaryMask = this.fog?.boundaryMask;
-    if (!this.dayNight) {
+    if (!this.dayNight && !this.scriptDayNight) {
       scene.dncEnabled = 0;
       return;
     }
-    const { terrain, unit } = this.dayNight.sample(this.rts?.timeOfDay().hour ?? MELEE.MELEE_STARTING_TOD);
+    // The map's own SetDayNightModels pair wins over the tileset's (melee.ts native; the
+    // comment on the field). Both are sampled off the same sim clock.
+    const cycle = this.scriptDayNight ?? this.dayNight;
+    if (!cycle) {
+      scene.dncEnabled = 0;
+      return;
+    }
+    const { terrain, unit } = cycle.sample(this.rts?.timeOfDay().hour ?? MELEE.MELEE_STARTING_TOD);
     scene.dncTerrain = terrain;
     scene.dncUnit = unit;
     scene.dncEnabled = 1;

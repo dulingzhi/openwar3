@@ -148,7 +148,7 @@ function registerUtilNatives(rt: Runtime): void {
   // behind them: real now, see natives/camera.ts + natives/cinematic.ts.
   // SetAmbientDay/NightSound stay: they name a MIDI ambience bed we don't synthesize.)
   for (const name of [
-    "SetDayNightModels", "SetAmbientDaySound", "SetAmbientNightSound",
+    "SetAmbientDaySound", "SetAmbientNightSound",
     "SetMapFlag", "SetMapName",
   ]) {
     if (!rt.natives.has(name)) def(rt, name, () => JNULL);

@@ -244,13 +244,27 @@ export class DayNightCycle {
    *  keeps the viewer's stock, unlit shading). */
   static load(vfs: DataSource, tileset: string): DayNightCycle | null {
     const lights = terrainLightPaths(vfs, tileset);
-    const terrain = loadSampler(vfs, lights.terrain);
-    const unit = loadSampler(vfs, lights.unit);
-    return terrain && unit ? new DayNightCycle(terrain, unit) : null;
+    return DayNightCycle.fromPaths((p) => vfs.rawBytes(p), lights.terrain, lights.unit);
   }
 
   sample(hour: number): DayNightLights {
     return { terrain: this.terrain.sample(hour), unit: this.unit.sample(hour) };
+  }
+
+  /** The day/night pair a map's own `SetDayNightModels` names. DSIII swaps the tileset rig
+   *  for its own `light.mdx`/`lightunit.mdx` — a STATIC FDirectSun at 12.5 % grey with the
+   *  ambient intensity at zero, which is the whole of that map's permanent-night look (the
+   *  login backdrop and the match alike; the clock is frozen by its SetTimeOfDayScale(0)).
+   *  The fetcher reads map-archive-first, install otherwise, like the asset solver; a model
+   *  neither source has is a supported null and the tileset rig stays. */
+  static fromPaths(
+    raw: (p: string) => Uint8Array | null,
+    terrain: string,
+    unit: string,
+  ): DayNightCycle | null {
+    const terrainSampler = loadSampler(raw, terrain);
+    const unitSampler = loadSampler(raw, unit);
+    return terrainSampler && unitSampler ? new DayNightCycle(terrainSampler, unitSampler) : null;
   }
 }
 
@@ -285,8 +299,15 @@ function iniValue(text: string, section: string, key: string): string | null {
 
 /** Parse one DNC model and wrap its single light in a sampler. WorldEditData names
  *  the models as `.mdl`, but the archives ship the binary `.mdx` — swap the suffix. */
-function loadSampler(vfs: DataSource, mdlPath: string): LightSampler | null {
-  const bytes = vfs.rawBytes(mdlPath.replace(/\.mdl$/i, ".mdx"));
+function loadSampler(raw: (p: string) => Uint8Array | null, mdlPath: string): LightSampler | null {
+  let bytes: Uint8Array | null = null;
+  try {
+    bytes = raw(mdlPath.replace(/\.mdl$/i, ".mdx"));
+  } catch {
+    // A protected archive may throw on a hash-table name whose data no longer decodes
+    // (data/mapOverlay.ts's tolerantSource lesson) — a missing model is a supported answer.
+    return null;
+  }
   if (!bytes) return null;
   let model: MdlxModel;
   try {

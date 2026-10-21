@@ -978,6 +978,11 @@ export interface EngineHooks {
    *  resource bar, the SimpleUIParent, the whole furniture — so a map's own HUD replaces the
    *  console entirely. DSIII's NGUI_init calls it once and expects a bare world. */
   hideInterface?(hide: boolean): void;
+  /** SetDayNightModels(terrain, unit) — the map's own day/night lighting rig. WC3 lights
+   *  the scene from the named models' single directional light (its colour/intensity tracks
+ *  across the "Stand" clip); a map overrides the tileset's pair at environment setup, and
+   *  DSIII uses it to hold a permanent night (a static 12.5 % grey sun). */
+  setDayNightModels?(terrain: string, unit: string): void;
   /** BlzFrameSetVisible on `ConsoleUIBackdrop` — the black box behind the bottom console. */
   setConsoleBackdropVisible?(visible: boolean): void;
   /** UnitId / UnitId2String — a unit type by its internal UnitUI `name`, and back. */

@@ -83,6 +83,16 @@ export function registerMeleeNatives(rt: Runtime): void {
   def(rt, "GetTimeOfDayScale", (c) => jReal(c.rt.hooks?.getTimeOfDayScale?.() ?? 1));
   def(rt, "SuspendTimeOfDay", (c, a) => (c.rt.hooks?.suspendTimeOfDay?.(truthy(a[0])), JNULL));
 
+  // --- lighting rig (SetDayNightModels) ---
+  // main() calls it with the tileset's pair (DSIII: DNCAshenvale), then the map's own init
+  // trigger swaps in a custom pair (DSIII: `light.mdx`/`lightunit.mdx` — a static 12.5 %
+  // grey sun, i.e. permanent night). Our sampler (render/dayNight.ts) already reads the
+  // game's own DNC MDX colour tracks, so the native only needs to hand the names over.
+  def(rt, "SetDayNightModels", (c, a) => {
+    c.rt.hooks?.setDayNightModels?.(asStr(a[0] ?? JNULL), asStr(a[1] ?? JNULL));
+    return JNULL;
+  });
+
   // --- the camera (MeleeStartingUnits* frames the starting workers, not the hall) ---
   // The …ForPlayer BJs gate on GetLocalPlayer — and since item 7b that gate is re-run once per
   // recipient, so a call reaching here is for whoever `localViewer` currently says. Which one
