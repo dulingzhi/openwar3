@@ -4,9 +4,9 @@ This is the execution document for [`docs/lua-engine-port.md`](./lua-engine-port
 design document says **what** and **why**; this one says **in what order**, **in which file**,
 **with what code**, and **how it is proved**.
 
-**Status (2026-10-21): S1-S13, S15 and the stub half of S19 are implemented and verified
-headlessly.** Remaining: S0 (the corpus scan tool), S14 (unit state and type data), S16
-(`jass.code`), S17 (`jass.slk`), S18 (`jass.message`) and the docs/perf tail of S19.
+**Status (2026-10-21): S1-S17 and the stub half of S19 are implemented and verified
+headlessly.** Remaining: S0 (the corpus scan tool), S18 (`jass.message`, the one step that
+needs a renderer bridge) and the docs/perf tail of S19.
 
 Verification in this checkout: `npx tsc --noEmit` is clean for every file these steps touch;
 the repo-wide `pnpm typecheck` still reports two errors in `src/voice/whisperWorker.ts`
