@@ -6,9 +6,10 @@ design document says **what** and **why**; this one says **in what order**, **in
 
 **Status (2026-10-21): S0-S18 and the stub half of S19 are implemented and verified.** The
 corpus scan (`tools/lua-usage-scan.cjs`) and the real demo-map test
-(`tools/lua-demo-test.cjs`, `pnpm lua:demo`) both run against the KKWE3 example maps. S18's
-MODULE is done; the app-side `LuaInputBridge` implementation is the remaining half (with no
-bridge every function is a safe no-op and says so once). The docs/perf tail of S19 remains.
+(`tools/lua-demo-test.cjs`, `pnpm lua:demo`) both run against the KKWE3 example maps. S18 is
+complete in BOTH halves: the module and the renderer's `LuaInputBridge` (camera pointer,
+command card, selection, and orders through the same Issue*Order natives a script uses).
+The docs/perf tail of S19 remains.
 
 Verification in this checkout: `npx tsc --noEmit` is clean for every file these steps touch;
 the repo-wide `pnpm typecheck` still reports two errors in `src/voice/whisperWorker.ts`

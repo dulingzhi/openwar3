@@ -919,6 +919,9 @@ export class RtsController {
   private screen2 = new Float32Array(2);
   private ray = new Float32Array(6);
   private groundT = Infinity; // ray parameter of the last groundHit (terrain occlusion in pickAt)
+  /** The last pointer position in CSS pixels — `jass.message.mouse()` asks where the cursor is
+   *  between events, and this is the only place the controller already receives it. */
+  private lastPointer = { x: 0, y: 0 };
   private volumes: PickVolume[] = []; // scratch: one body's click volumes, rebuilt per candidate
 
   constructor(
@@ -6217,6 +6220,8 @@ export class RtsController {
    *  hovered. Gold mines aren't sim units, so they're picked from the ground
    *  point — this is what gives a neutral mine its yellow ring on hover. */
   hoverAt(cssX: number, cssY: number): void {
+    this.lastPointer.x = cssX;
+    this.lastPointer.y = cssY;
     this.hoveredMine = null;
     this.hoveredItem = null;
     // A ground item under the cursor wins the hover over a unit standing on it, the way it
@@ -8082,6 +8087,12 @@ export class RtsController {
   }
 
   /** Convert a CSS click to a world ground point (for build placement). */
+  /** The world point under the last pointer position (jass.message's `mouse()`). */
+  pointerWorld(): { x: number; y: number } {
+    const g = this.groundPoint(this.lastPointer.x, this.lastPointer.y);
+    return g ? { x: g[0], y: g[1] } : { x: 0, y: 0 };
+  }
+
   groundPoint(cssX: number, cssY: number): [number, number] | null {
     const dpr = this.dpr();
     this.screen[0] = cssX * dpr;

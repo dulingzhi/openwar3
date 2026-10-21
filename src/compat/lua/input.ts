@@ -26,13 +26,14 @@ export interface LuaInputBridge {
   /** World coordinates under the cursor. */
   mouseWorld(): { x: number; y: number };
   /** The command-card slot at (x, y) — the same coordinates `jass.message.button` takes. */
-  commandButton(x: number, y: number): { ability: number; order: number; targetType: number } | null;
+  commandButton(x: number, y: number): { ability: number; order: number | string; targetType: number } | null;
   /** The local player's primary selected unit, as a handle id (0 = none). */
   selectedUnit(): number;
   /** Issue an order as the local player. The app routes it through its own order gate. */
   issueOrder(
     kind: "immediate" | "point" | "target",
-    order: number,
+    /** YD's order id, or the order NAME when the command card named an ability. */
+    order: number | string,
     x?: number,
     y?: number,
     target?: number,

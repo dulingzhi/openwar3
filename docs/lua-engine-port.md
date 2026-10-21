@@ -536,8 +536,10 @@ interface LuaInputBridge {
 }
 ```
 
-Phase 4. Ship `mouse`, `selection` and `hook` first (they read existing state); the order
-injection goes through the same `RtsController.execute` gate as a click, never around it.
+**Implemented** (S18): `mouse`, `selection`, `button`, `hook` and the three order calls are
+live over the injected bridge. The order path goes through the same `Issue*Order` natives a
+script uses, and so through the same funnel as a click. YD's queue/solo/restore FLAGS are
+accepted and not yet acted on.
 
 ### 5.12 `jass.console` and `jass.log`
 

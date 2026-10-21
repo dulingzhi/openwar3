@@ -20,7 +20,7 @@ import { summonsBuildings, castCostOf, isOffField, CARRIED_ONTO_SHEET, type Aler
 import { stampFootprints, stampFootprint, unstampFootprint, decodePathTex, footprintBuildable, footprintCellsAt, footprintRadius, quarterTurns, rotateFootprint, type Footprint, type PlacedFootprint } from "../sim/destructibles";
 import { parseMapUnits, GOLD_MINE_ID, START_LOCATION_ID } from "../world/mapUnits";
 import { frameModel, loadMapScript, type MapScriptEngine } from "../jass/index";
-import { learnOrderStrings } from "../jass/orders";
+import { learnOrderStrings, orderIdToString } from "../jass/orders";
 import { localizedHotkey } from "../jass/natives/text";
 import { setWidePlayerTable } from "../data/enums";
 import { ScriptFrameOverlay } from "../ui/scriptFrames";
@@ -59,6 +59,9 @@ import { applyMapUnitData, applyMapAbilityData, applyMapItemData, applyMapUpgrad
 import { readMapFormat, UNKNOWN_FORMAT, type MapFormatProfile } from "../compat/mapFormat";
 import { readW3i } from "../compat/w3i";
 import { preloadLuaHost } from "../compat/lua/index";
+import type { LuaInputBridge, LuaInputEvent } from "../compat/lua/input";
+import { jHandle, jReal, jStr } from "../jass/values";
+import { rawcodeToInt } from "../jass/lexer";
 import { MAP_MISC_FILE, NO_MAP_MISC, parseMapMisc, type MapMisc } from "../data/mapMisc";
 import { loadUberSplatRegistry, type UberSplatDef, type UberSplatRegistry } from "../data/ubersplats";
 import { loadLightningRegistry } from "../data/lightning";
@@ -4102,6 +4105,9 @@ export class MapViewerScene {
         // Whether this map's `Blz…` weapon natives count from 0 or 1 — its own editor build says
         // which convention its author tested (MapFormatProfile.blzIndexBase).
         blzIndexBase: this.mapFormat.blzIndexBase,
+        // `jass.message` (docs/lua-engine-port.md §5.11): the camera, selection and command
+        // card are this object's, so the bridge is too.
+        input: this.luaInputBridge(),
         // Publish the engine BEFORE config()/main() run: a hook fired during init may need
         // the interpreter itself (ChooseRandomItem draws from its seeded RNG — 7.18).
         onBoot: (e) => {
@@ -16996,10 +17002,52 @@ export class MapViewerScene {
     if (alpha <= 0) this.cinematicSkip = null;
   }
 
+  /** The app half of `jass.message` (src/compat/lua/input.ts). */
+  private luaInputFilter: ((ev: LuaInputEvent) => boolean) | null = null;
+
+  private luaInputBridge(): LuaInputBridge {
+    return {
+      setFilter: (fn) => { this.luaInputFilter = fn; },
+      mouseWorld: () => this.rts?.pointerWorld() ?? { x: 0, y: 0 },
+      commandButton: (x, y) => {
+        const b = this.commandCard().find((c) => c.col === x && c.row === y && !c.disabled && !c.passive);
+        if (!b) return null;
+        const m = /^(?:ability|autocast):([A-Za-z0-9]{4})$/.exec(b.id);
+        if (!m) return null;
+        const def = this.abilities.get(m[1]);
+        // YD's target_type: 1 = no target, 2 = point, 4 = unit.
+        const targetType = def?.target === "unit" ? 4 : def?.target === "point" ? 2 : 1;
+        return { ability: rawcodeToInt(m[1]), order: def?.order ?? "", targetType };
+      },
+      selectedUnit: () => this.rts?.selectedInfo()?.id ?? 0,
+      // The flags (queue / solo / restore) have no bridge equivalent yet; the order itself
+      // goes through the SAME natives a script uses, so the sim's gates still apply.
+      issueOrder: (kind, order, x, y, target) => {
+        const interp = this.mapScript?.interp;
+        const id = this.rts?.selectedInfo()?.id;
+        if (!interp || !id) return false;
+        const name = typeof order === "string" ? order : orderIdToString(order);
+        if (!name) return false;
+        const u = jHandle(id, "unit");
+        if (kind === "immediate") interp.callFunction("IssueImmediateOrder", [u, jStr(name)]);
+        else if (kind === "point") interp.callFunction("IssuePointOrder", [u, jStr(name), jReal(x ?? 0), jReal(y ?? 0)]);
+        else interp.callFunction("IssueTargetOrder", [u, jStr(name), jHandle(target ?? 0, "unit")]);
+        return true;
+      },
+    };
+  }
+
   private attachControls(): void {
     const c = this.canvas;
     this.bindVoiceKeys();
     this.on(window, "keydown", (e: KeyboardEvent) => {
+      // A map's `jass.message` filter sees the key FIRST; returning false swallows it before
+      // any console panel, cheat or camera binding. YD's event names are key_down/key_up.
+      if (this.luaInputFilter && !this.luaInputFilter({ type: "key_down", code: e.keyCode })) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       // ESC during a cinematic SKIPS it — WC3 raises EVENT_PLAYER_END_CINEMATIC for the
       // local player and the map's own skip trigger takes it from there (see
       // Interpreter.firePlayerEvent for the NightElfX01 trigger this exists for).

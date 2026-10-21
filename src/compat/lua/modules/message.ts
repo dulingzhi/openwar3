@@ -35,6 +35,15 @@ export function open(host: LuaModuleHost, S: LuaState): void {
   const bridge = host.options.input;
   let hookRef = LUA_NOREF;
 
+  const orderAt = (C: LuaState, i: number): number | string => {
+    const t = lua.lua_type(C, i);
+    if (t === lua.LUA_TSTRING) {
+      const raw = lua.lua_tolstring(C, i);
+      return raw ? to_jsstring(raw) : "";
+    }
+    return lua.lua_tointeger(C, i);
+  };
+
   const noBridge = (what: string): void =>
     host.warnOnce(`message:${what}`, "no input bridge is attached");
 
@@ -106,7 +115,8 @@ export function open(host: LuaModuleHost, S: LuaState): void {
     const b = bridge.commandButton(x, y);
     if (!b) return 0;
     lua.lua_pushinteger(C, b.ability);
-    lua.lua_pushinteger(C, b.order);
+    if (typeof b.order === "string") lua.lua_pushstring(C, to_luastring(b.order));
+    else lua.lua_pushinteger(C, b.order);
     lua.lua_pushinteger(C, b.targetType);
     return 3;
   });
@@ -120,13 +130,13 @@ export function open(host: LuaModuleHost, S: LuaState): void {
   });
 
   setField("order_immediate", (C) => {
-    const ok = bridge?.issueOrder("immediate", lua.lua_tointeger(C, 1), undefined, undefined, undefined, lua.lua_tointeger(C, 2)) ?? false;
+    const ok = bridge?.issueOrder("immediate", orderAt(C, 1), undefined, undefined, undefined, lua.lua_tointeger(C, 2)) ?? false;
     lua.lua_pushboolean(C, ok);
     return 1;
   });
   setField("order_point", (C) => {
     const ok = bridge?.issueOrder(
-      "point", lua.lua_tointeger(C, 1), lua.lua_tonumber(C, 2), lua.lua_tonumber(C, 3), undefined, lua.lua_tointeger(C, 4),
+      "point", orderAt(C, 1), lua.lua_tonumber(C, 2), lua.lua_tonumber(C, 3), undefined, lua.lua_tointeger(C, 4),
     ) ?? false;
     lua.lua_pushboolean(C, ok);
     return 1;
@@ -134,7 +144,7 @@ export function open(host: LuaModuleHost, S: LuaState): void {
   setField("order_target", (C) => {
     const target = host.read(C, 4);
     const ok = bridge?.issueOrder(
-      "target", lua.lua_tointeger(C, 1), lua.lua_tonumber(C, 2), lua.lua_tonumber(C, 3),
+      "target", orderAt(C, 1), lua.lua_tonumber(C, 2), lua.lua_tonumber(C, 3),
       target.k === "handle" ? target.h : undefined, lua.lua_tointeger(C, 5),
     ) ?? false;
     lua.lua_pushboolean(C, ok);
