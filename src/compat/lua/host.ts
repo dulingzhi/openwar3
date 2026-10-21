@@ -11,6 +11,7 @@ import { open as openCommon } from "./modules/common";
 import { open as openGlobals } from "./modules/globals";
 import { open as openRuntime } from "./modules/runtime";
 import { open as openDebug } from "./modules/debug";
+import { open as openHook } from "./modules/hook";
 import { pushArrayProxy } from "./modules/jarray";
 import { createSettings, LUA_NOREF, type LuaRuntimeSettings } from "./settings";
 
@@ -137,6 +138,10 @@ export interface LuaModuleHost {
   /** The host name behind an engine closure at `i`, or null (a map Lua function). */
   nameOfEngineFunction(L: LuaState, i: number): string | null;
   warnOnce(key: string, msg: string): void;
+  /** Call a Lua function by registry ref, synchronously; `real` becomes its last argument. */
+  callLuaRef(ref: number, args: JassValue[], real?: (args: JassValue[]) => JassValue): JassValue;
+  /** Register a cleanup to run on `dispose` (a module that patched the engine). */
+  onDispose(fn: () => void): void;
   /** Call the script's `error_handle` (guarded), or log when none is set. */
   reportError(msg: string): void;
   /** Change how handles cross into Lua; the requested level is kept in `settings`. */
@@ -226,6 +231,38 @@ export function createLuaMapScript(interp: Interpreter, seed: number, options: L
     const line = `total time[${total.toFixed(3)}ms], call count[${perfCalls}] time[${perfMs.toFixed(3)}ms]`;
     perfStart = now; perfCalls = 0; perfMs = 0;
     return line;
+  };
+
+  const disposers: Array<() => void> = [];
+
+  /** Call a Lua function by registry ref. No yields: a native's return cannot suspend. */
+  const callLuaRef = (ref: number, args: JassValue[], real?: (a: JassValue[]) => JassValue): JassValue => {
+    const top = lua.lua_gettop(L);
+    lua.lua_rawgeti(L, lua.LUA_REGISTRYINDEX, ref);
+    if (lua.lua_type(L, -1) !== lua.LUA_TFUNCTION) {
+      lua.lua_settop(L, top);
+      return JNULL;
+    }
+    for (const a of args) push(L, a);
+    if (real) {
+      lua.lua_pushjsfunction(L, (S) => {
+        const n = lua.lua_gettop(S);
+        const realArgs: JassValue[] = [];
+        for (let i = 1; i <= n; i++) realArgs.push(read(S, i));
+        push(S, real(realArgs));
+        return 1;
+      });
+    }
+    const nargs = args.length + (real ? 1 : 0);
+    if (lua.lua_pcall(L, nargs, 1, 0) !== lua.LUA_OK) {
+      const msg = lua.lua_gettop(L) ? to_jsstring(lua.lua_tostring(L, -1)) : "?";
+      reportError(`Lua callback error: ${msg}`);
+      lua.lua_settop(L, top);
+      return JNULL;
+    }
+    const out = lua.lua_gettop(L) > top ? read(L, -1) : JNULL;
+    lua.lua_settop(L, top);
+    return out;
   };
 
   /** Engine names this host has cached into `_G`. They are OURS, not the map's, and must
@@ -604,6 +641,8 @@ export function createLuaMapScript(interp: Interpreter, seed: number, options: L
     pushEngineClosure,
     nameOfEngineFunction: (S, i) => bridge.nameOfEngineFunction(S, i),
     warnOnce: (k, m) => rt.warnOnce(k, m),
+    callLuaRef,
+    onDispose: (fn) => disposers.push(fn),
     reportError,
     setHandleLevel,
     perftrace,
@@ -612,6 +651,7 @@ export function createLuaMapScript(interp: Interpreter, seed: number, options: L
   preloads.set("jass.globals", (S) => openGlobals(moduleHost, S));
   preloads.set("jass.runtime", (S) => openRuntime(moduleHost, S));
   preloads.set("jass.debug", (S) => openDebug(moduleHost, S));
+  preloads.set("jass.hook", (S) => openHook(moduleHost, S));
 
   // `require` after the sandbox sweep, so `package` is ours and `load` stays nil. This must
   // happen BEFORE `before` is captured: `require` and the two C helpers are engine names, not
@@ -667,6 +707,11 @@ export function createLuaMapScript(interp: Interpreter, seed: number, options: L
       return requireApi.requireModule(name);
     },
     dispose(): void {
+      // Hooks and other engine patches first: a module that wrapped a native must put it back
+      // before the host functions it may call are removed.
+      for (const fn of disposers.splice(0)) {
+        try { fn(); } catch (err) { console.info(`[lua] dispose: ${(err as Error).message}`); }
+      }
       for (const name of published) rt.hostFunctions.delete(name);
       published.clear();
       handles.reset();
