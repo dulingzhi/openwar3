@@ -5,7 +5,8 @@ design document says **what** and **why**; this one says **in what order**, **in
 **with what code**, and **how it is proved**.
 
 **Status (2026-10-21): S0-S18, every `yd_jass_api` name and the stub half of S19 are
-implemented and verified.** The remaining LIMITATIONS are listed in the design doc's
+implemented and verified; the DzAPI declaration layer (P0 of [`docs/dzapi-port.md`](./dzapi-port.md))
+is also in — 394 names visible in `jass.japi` and `jass.common` with typed defaults.** The remaining LIMITATIONS are listed in the design doc's
 divergence table (unit type slots beyond 10/61, the effect matrix as Euler angles, collision
 bit semantics, and the 64x64 paletted blend); they are data/format limits, not stubs. The
 corpus scan (`tools/lua-usage-scan.cjs`) and the real demo-map test

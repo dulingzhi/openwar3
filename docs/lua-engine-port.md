@@ -451,6 +451,11 @@ the functions themselves are engine natives. Ours is the same shape:
 * a name not in the registry answers `nil`, so a typo fails where it is written;
 * `EXExecuteScript(expr)` is a built-in entry (§7.3), and `registerJapi(name, decl, fn)` is
   the door a future plugin surface would use. No JAPI plugin is ported as a whole — see §6.
+* **DzAPI (`dz_w3_plugin`) is the second native layer**: 394 `Dz*`/`DzAPI_Map_*`/`RequestExtra*`
+  names registered by the original with `RegisterNativeFunction`. They are generated into
+  `japi/dzapi-decl.ts` and registered as JAPI aliases too, so `jass.japi` AND `jass.common`
+  reach each one with its signature; until a pack implements a body it answers its typed
+  default and logs once. See [`docs/dzapi-port.md`](./dzapi-port.md).
 
 ### 5.7 `jass.debug`
 

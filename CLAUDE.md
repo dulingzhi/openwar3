@@ -863,8 +863,10 @@ data, or asset behaviour, **consult our sources** and cite what you used.
   `EXSetAbilityAEmeUnitID` spelling + the 3 `japi_hook` aliases). **DzAPI
   (`dz_w3_plugin`) is a DIFFERENT native layer** — 394 `Dz*`/`DzAPI_Map_*`/`RequestExtra*`
   registered with `RegisterNativeFunction`, so they are natives first, not `jass.japi` names;
-  read [`docs/dzapi-port.md`](docs/dzapi-port.md) before touching it. kkapi's extra `Dz*`
-  registrations stay out of scope for now. Writes to a shared row are
+  read [`docs/dzapi-port.md`](docs/dzapi-port.md) before touching it. Their 394 names are
+  generated into `japi/dzapi-decl.ts` and registered as JAPI ALIASES, so `jass.japi` and
+  `jass.common` both reach them; an unimplemented body answers its typed default once. kkapi's
+  extra `Dz*` registrations stay out of scope for now. Writes to a shared row are
   PER-MAP CLONES (`ItemRegistry.setCustom` / `AbilityRegistry.setBuffString`), and unit TYPE
   writes answer only slots 10/61 — the raw `CUnitData` slots the corpus proves. The effect
   matrix is an Euler yaw/pitch/roll approximation and collision bits other than 0 are stored

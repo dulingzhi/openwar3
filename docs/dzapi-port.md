@@ -1,6 +1,10 @@
 # `dz_w3_plugin` → OpenWar3: porting the DzAPI native layer
 
-**Status: analysis and plan.** This document covers the JAPI surface in
+**Status (2026-10-21): P0 DONE; P1+ are the plan.** All 394 names are generated into
+[`src/compat/lua/japi/dzapi-decl.ts`](../src/compat/lua/japi/dzapi-decl.ts) by
+`pnpm dzapi:decl` and registered as JAPI aliases, so `jass.japi`, `jass.common` and `_G`
+all reach them with their signatures; an unimplemented one answers its typed default and
+logs once. The packs below replace those defaults. This document covers the JAPI surface in
 `F:\Projects\dz_w3_plugin\src\plugin` — the second native plugin after `yd_jass_api`
 (whose contract is already ported, see [`lua-engine-port.md`](./lua-engine-port.md)).
 

@@ -45,6 +45,7 @@
     "../src/compat/lua/modules/slk.ts",
     "../src/compat/lua/modules/message.ts",
     "../src/compat/lua/japi/decl.ts",
+    "../src/compat/lua/japi/dzapi-decl.ts",
     "../src/compat/lua/japi/signature.ts",
     "../src/compat/lua/japi/registry.ts",
     "../src/compat/lua/japi/damage.ts",
