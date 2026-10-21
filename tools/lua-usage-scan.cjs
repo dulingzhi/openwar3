@@ -15,7 +15,7 @@
 // cost. It reads the developer's own files and writes nothing unless --out is given.
 
 const { readFileSync, readdirSync, statSync, existsSync, writeFileSync } = require('node:fs');
-const { join, extname } = require('node:path');
+const { join } = require('node:path');
 
 const mpqMod = require('mdx-m3-viewer/dist/cjs/parsers/mpq');
 const MpqArchive = (mpqMod.default ?? mpqMod).Archive;
