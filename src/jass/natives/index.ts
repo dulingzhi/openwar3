@@ -18,6 +18,7 @@ import { registerEffectNatives } from "./effects";
 import { registerLightningNatives } from "./lightning";
 import { registerImageryNatives } from "./imagery";
 import { registerEventNatives } from "./events";
+import { registerSelectionSwitches } from "./selectionSwitches";
 import { registerLeaderboardNatives } from "./leaderboard";
 import { registerForceNatives } from "./forces";
 import { registerGameCacheNatives } from "./gamecache";
@@ -156,6 +157,7 @@ function registerUtilNatives(rt: Runtime): void {
 
 /** Register the whole implemented native surface into a fresh runtime. */
 export function registerNatives(rt: Runtime): void {
+  registerSelectionSwitches(rt);
   for (const name of CONVERT_NATIVES) {
     const kind = name.slice("Convert".length);
     def(rt, name, (c, a) => c.rt.enumHandle(kind, asInt(a[0])));

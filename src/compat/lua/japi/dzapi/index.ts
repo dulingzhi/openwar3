@@ -1,10 +1,13 @@
 import type { Runtime } from "../../../../jass/runtime";
+import { DZAPI } from "../dzapi-decl";
+import { registerJapiAlias } from "../registry";
 import { valueImpls } from "./values";
 import { systemImpls } from "./system";
 import { textTagImpls } from "./texttag";
 import { unitDbImpls } from "./unitdb";
 import { effectImpls } from "./effect";
 import { selectionImpls } from "./selection";
+import { frameImpls } from "./frame";
 
 // DzAPI P1 registration (docs/dzapi-port.md §4).
 //
@@ -14,9 +17,12 @@ import { selectionImpls } from "./selection";
 // and `_G` use the native directly.
 
 export function installDzapi(rt: Runtime): void {
+  // DzAPI is a NATIVE layer: register the declarations for EVERY map (JASS or Lua), then the
+  // packs. `registerJapiAlias` is idempotent, so the Lua host can call this too.
+  for (const decl of DZAPI) registerJapiAlias(rt, decl);
   const impls = {
     ...valueImpls(rt), ...systemImpls(rt), ...textTagImpls(rt), ...unitDbImpls(rt),
-    ...effectImpls(rt), ...selectionImpls(rt),
+    ...effectImpls(rt), ...selectionImpls(rt), ...frameImpls(rt),
   };
   for (const [name, fn] of Object.entries(impls)) rt.natives.set(name, fn);
 }

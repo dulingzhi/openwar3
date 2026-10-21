@@ -120,6 +120,41 @@ function bind(w, e) J.DzBindEffect(w, "overhead,left", e) J.DzUnbindEffect(e) en
 function sel() return J.DzGetLocalSelectUnitCount() .. ":" .. GetHandleId(J.DzGetLocalSelectUnit(1)) .. ":" .. GetHandleId(J.DzGetSelectedLeaderUnit()) end
 function icon(u) J.DzWidgetSetMinimapIcon(u, "x.blp") J.DzWidgetSetMinimapIconEnable(u, true) end
 function tech(ph) J.DzRemovePlayerTechResearched(ph, FourCC("Rhme"), 2) end
+function frames()
+  local ui = J.DzGetGameUI()
+  local f = J.DzCreateFrameByTagName("FRAME", "test", ui, "", 0)
+  J.DzFrameSetPoint(f, 4, ui, 4, 0.1, 0.2)
+  J.DzFrameSetSize(f, 0.3, 0.4)
+  J.DzFrameSetText(f, "hi")
+  J.DzFrameAddText(f, "!")
+  J.DzFrameSetAlpha(f, 180)
+  J.DzFrameSetEnable(f, false)
+  J.DzFrameSetTextColor(f, 0xFF112233)
+  J.DzFrameSetTextSizeLimit(f, 99)
+  J.DzFrameSetPriority(f, 7)
+  J.DzFrameShow(f, false)
+  local found = J.DzFrameFindByName("test", 0)
+  return ui > 0 and f > 0
+    and math.abs(J.DzFrameGetWidth(f) - 0.3) < 1e-6
+    and math.abs(J.DzFrameGetHeight(f) - 0.4) < 1e-6
+    and J.DzFrameGetText(f) == "hi!"
+    and J.DzFrameGetAlpha(f) == 180
+    and J.DzFrameGetEnable(f) == false
+    and J.DzFrameGetTextSizeLimit(f) == 99
+    and J.DzFrameGetPriority(f) == 7
+    and J.DzFrameIsVisible(f) == false
+    and J.DzFrameGetPointValid(f, 4) == true
+    and math.abs(J.DzFrameGetPointX(f, 4) - 0.1) < 1e-6
+    and J.DzFrameGetParent(f) == ui
+    and found == f
+    and J.DzGetColor(255, 0x11, 0x22, 0x33) == -15654349
+end
+function frameChildren()
+  local ui = J.DzGetGameUI()
+  J.DzCreateFrameByTagName("FRAME", "c1", ui, "", 0)
+  J.DzCreateFrameByTagName("FRAME", "c2", ui, "", 0)
+  return J.DzFrameGetChildrenCount(ui) >= 2
+end
 `, "dzapi-p1.lua");
 
 const call = (n, args) => interp.callFunction(n, args ?? []);
@@ -155,6 +190,8 @@ call("icon", [jHandle(uid, "unit")]);
 check("minimap icon", JSON.stringify(find("icon")), JSON.stringify(["icon", 7, "x.blp"]));
 call("tech", [jHandle(pid, "player")]);
 check("tech removal", JSON.stringify(find("tech")), JSON.stringify(["tech", 3, "Rhme", 2]));
+check("frame core flow", call("frames").b, true);
+check("frame children", call("frameChildren").b, true);
 
 lua.dispose();
 console.log(failures === 0 ? "\nDzAPI P1: all checks pass" : `\n${failures} failure(s)`);

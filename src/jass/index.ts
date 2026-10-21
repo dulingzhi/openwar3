@@ -16,6 +16,7 @@ import type { Interpreter } from "./interpreter";
 import type { EngineHooks, LobbySlot, MapSetup } from "./runtime";
 import { COMPAT_PRELUDE } from "../compat/prelude";
 import { createLuaMapScript, type LuaMapScript } from "../compat/lua/index";
+import { installDzapi } from "../compat/lua/japi/dzapi/index";
 
 const decode = (b: Uint8Array): string => wc3TextDecoder().decode(b);
 // war3map.wts is UTF-8 (with a BOM); decode it as such so authored text isn't mojibake.
@@ -131,6 +132,9 @@ export function loadMapScript(
     neutralColor: opts.neutralColor,
     blzIndexBase: opts.blzIndexBase,
   });
+  // DzAPI is a NATIVE layer (`dz_w3_plugin`), not a Lua feature: a JASS map calls DzFrame*
+  // exactly as a Lua one does. Install it for every map before config()/main() run.
+  installDzapi(interp.rt);
   const engine: MapScriptEngine = { interp, setup: interp.rt.setup };
   // The Lua chunk runs LAST, after the JASS libraries are in the runtime, because that is what
   // its globals resolve into — and it publishes its own `config`/`main` as host functions, so

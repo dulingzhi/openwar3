@@ -1319,6 +1319,8 @@ export interface EngineHooks {
   /** `DzGetLocalSelectUnit*` / `DzGetSelectedLeaderUnit` — the local selection as handles. */
   localSelection?(): JassValue[];
   localLeader?(): JassValue;
+  /** `EnableSelect` / `EnableDragSelect` / `EnablePreSelect` — the mouse selection switches. */
+  setSelectEnabled?(which: string, enabled: boolean): void;
   /** `DzWidgetSetMinimapIcon[Enable]` — a per-unit minimap glyph override. */
   setWidgetMinimapIcon?(unitId: number, path: string): void;
   setWidgetMinimapIconEnabled?(unitId: number, enabled: boolean): void;

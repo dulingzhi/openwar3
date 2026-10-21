@@ -78,6 +78,22 @@ export interface FrameObj {
   tooltip: number; // handle id of the frame shown as this one's tooltip, 0 for none
   /** This frame IS a tooltip — the engine shows it only while its owner is hovered. */
   tooltipOf: number;
+  // --- DzFrame extras (war3japi_gui.cpp); stored and read back even where the drawing has
+  // no use for them yet, because a map's getter must answer what it set.
+  textColor?: number; // packed ARGB
+  textSizeLimit?: number;
+  textAlignment?: number;
+  font?: string;
+  fontHeight?: number;
+  fontFlags?: number;
+  vertexColor?: number; // packed ARGB
+  texCoord?: [number, number, number, number];
+  priority?: number;
+  minValue?: number;
+  maxValue?: number;
+  step?: number;
+  disabledText?: string;
+  highlightText?: string;
 }
 
 /** What the drawing reads: every frame, the map's templates, and two counters that say
