@@ -1592,6 +1592,10 @@ export class Runtime {
   /** The JAPI registry: names `japi_add` registered beyond common.j. An entry with no `impl`
    *  is DECLARED and not answered — `jass.japi` gives its typed default and says so once. */
   readonly japi = new Map<string, { params: string[]; returns: string; impl?: (ctx: NativeCtx, args: JassValue[]) => JassValue }>();
+  /** Script-function hooks (`jass.code[name] = fn`). Consulted AFTER natives and host
+   *  functions and BEFORE the JASS declaration, so a hook wraps the script's own body. The
+   *  `real` callback runs that body; it is synchronous (a native cannot yield through it). */
+  readonly codeHooks = new Map<string, (ctx: NativeCtx, args: JassValue[], real: (a: JassValue[]) => JassValue) => JassValue>();
   private warned = new Set<string>();
 
   /** Event-response stack (thread-local in the real engine): each fired trigger

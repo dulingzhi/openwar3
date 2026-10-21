@@ -354,7 +354,13 @@ export class Interpreter {
     // before `functions` for that reason and after the natives, which are the engine's.
     const host = this.rt.hostFunctions.get(name);
     if (host) return this.callHost(name, host, args);
+    // A script-function HOOK (`jass.code`) wraps the declaration: `real` is the body, run the
+    // same way the unhooked path would run it.
+    const hook = this.rt.codeHooks.get(name);
     const fn = this.rt.functions.get(name);
+    if (hook) {
+      return hook(this.ctx, args, (a) => fn ? this.runSync(this.callUserG(fn, a), name, false) : this.missing(name));
+    }
     if (fn) return this.runSync(this.callUserG(fn, args), name, adoptWaits);
     return this.missing(name);
   }
@@ -380,7 +386,13 @@ export class Interpreter {
     // thread instead of abandoning the callback. Same protocol: a yielded number is seconds.
     const host = this.rt.hostFunctions.get(name);
     if (host) return yield* host.run(args);
+    const hook = this.rt.codeHooks.get(name);
     const fn = this.rt.functions.get(name);
+    // A hook's `real` is synchronous by contract; a wait inside the hook callback is refused
+    // by the Lua door, exactly as a wait inside a condition is.
+    if (hook) {
+      return hook(this.ctx, args, (a) => fn ? this.runSync(this.callUserG(fn, a), name, false) : this.missing(name));
+    }
     if (fn) return yield* this.callUserG(fn, args);
     return this.missing(name);
   }
