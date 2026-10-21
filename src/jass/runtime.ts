@@ -1572,6 +1572,9 @@ export class Runtime {
   /** A native's declared PARAMETER types, in order — `jass.debug.functiondef` and the JAPI
    *  signature table ask for them (docs/lua-engine-port.md §5.7). Same source as above. */
   readonly nativeParams = new Map<string, string[]>();
+  /** The JAPI registry: names `japi_add` registered beyond common.j. An entry with no `impl`
+   *  is DECLARED and not answered — `jass.japi` gives its typed default and says so once. */
+  readonly japi = new Map<string, { params: string[]; returns: string; impl?: (ctx: NativeCtx, args: JassValue[]) => JassValue }>();
   private warned = new Set<string>();
 
   /** Event-response stack (thread-local in the real engine): each fired trigger

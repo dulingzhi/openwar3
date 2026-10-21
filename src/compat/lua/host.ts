@@ -2,7 +2,7 @@ import { lua, lauxlib, lualib, to_luastring, to_jsstring, type LuaState } from "
 import type { Interpreter } from "../../jass/interpreter";
 import type { HostFunction, Runtime } from "../../jass/runtime";
 import { rawcodeToInt } from "../../jass/lexer";
-import { asInt, asNum, asStr, defaultForType, JNULL, type JassValue } from "../../jass/values";
+import { asInt, asNum, asStr, defaultForType, jStr, JNULL, type JassValue } from "../../jass/values";
 import { createHandleCodec, type HandleCodec, type HandleMode } from "./handles";
 import { pushValue, readValue, type ValueBridge } from "./values";
 import type { LuaInputBridge } from "./input";
@@ -12,6 +12,11 @@ import { open as openGlobals } from "./modules/globals";
 import { open as openRuntime } from "./modules/runtime";
 import { open as openDebug } from "./modules/debug";
 import { open as openHook } from "./modules/hook";
+import { open as openJapi } from "./modules/japi";
+import { open as openConsole } from "./modules/console";
+import { open as openLog } from "./modules/log";
+import { YD_JAPI } from "./japi/decl";
+import { registerJapi } from "./japi/registry";
 import { pushArrayProxy } from "./modules/jarray";
 import { createSettings, LUA_NOREF, type LuaRuntimeSettings } from "./settings";
 
@@ -137,6 +142,8 @@ export interface LuaModuleHost {
   pushEngineClosure(L: LuaState, name: string): void;
   /** The host name behind an engine closure at `i`, or null (a map Lua function). */
   nameOfEngineFunction(L: LuaState, i: number): string | null;
+  /** Teach `nameOfEngineFunction` about a closure a module made itself (a JAPI stub). */
+  tagEngineFunction(fn: Function, name: string): void;
   warnOnce(key: string, msg: string): void;
   /** Call a Lua function by registry ref, synchronously; `real` becomes its last argument. */
   callLuaRef(ref: number, args: JassValue[], real?: (args: JassValue[]) => JassValue): JassValue;
@@ -234,6 +241,31 @@ export function createLuaMapScript(interp: Interpreter, seed: number, options: L
   };
 
   const disposers: Array<() => void> = [];
+
+  /** `EXExecuteScript` — evaluate an expression in this state (lua_loader.cpp:93-117). */
+  const execScript = (_ctx: unknown, args: JassValue[]): JassValue => {
+    const expr = rt.resolveTrigStr(asStr(args[0] ?? JNULL));
+    const top = lua.lua_gettop(L);
+    const src = `return (${expr})`;
+    if (lauxlib.luaL_loadbuffer(L, to_luastring(src), null, to_luastring("@EXExecuteScript")) !== lua.LUA_OK) {
+      const msg = lua.lua_gettop(L) ? to_jsstring(lua.lua_tostring(L, -1)) : "load failed";
+      lua.lua_settop(L, top);
+      reportError(`EXExecuteScript: ${msg}`);
+      return JNULL;
+    }
+    if (lua.lua_pcall(L, 0, 1, 0) !== lua.LUA_OK) {
+      const msg = lua.lua_gettop(L) ? to_jsstring(lua.lua_tostring(L, -1)) : "?";
+      lua.lua_settop(L, top);
+      reportError(`EXExecuteScript: ${msg}`);
+      return JNULL;
+    }
+    const v = lua.lua_gettop(L) > top ? read(L, -1) : JNULL;
+    lua.lua_settop(L, top);
+    if (v.k === "string") return v;
+    if (v.k === "int" || v.k === "real") return jStr(String(v.n));
+    if (v.k === "bool") return jStr(v.b ? "true" : "false");
+    return JNULL;
+  };
 
   /** Call a Lua function by registry ref. No yields: a native's return cannot suspend. */
   const callLuaRef = (ref: number, args: JassValue[], real?: (a: JassValue[]) => JassValue): JassValue => {
@@ -640,6 +672,7 @@ export function createLuaMapScript(interp: Interpreter, seed: number, options: L
     read,
     pushEngineClosure,
     nameOfEngineFunction: (S, i) => bridge.nameOfEngineFunction(S, i),
+    tagEngineFunction: (fn, name) => void engineFnNames.set(fn, name),
     warnOnce: (k, m) => rt.warnOnce(k, m),
     callLuaRef,
     onDispose: (fn) => disposers.push(fn),
@@ -647,11 +680,21 @@ export function createLuaMapScript(interp: Interpreter, seed: number, options: L
     setHandleLevel,
     perftrace,
   };
+  // JAPI first: every declaration fills nativeParams/nativeReturns, and EXExecuteScript gets
+  // the one implementation this layer owns. `jass.common` therefore sees implemented JAPI
+  // names through `rt.natives`, exactly as `japi_add` puts them in the JASS table.
+  for (const decl of YD_JAPI) {
+    registerJapi(rt, decl, decl.name === "EXExecuteScript" ? (c, a) => execScript(c, a) : undefined);
+  }
+
   preloads.set("jass.common", (S) => openCommon(moduleHost, S));
   preloads.set("jass.globals", (S) => openGlobals(moduleHost, S));
   preloads.set("jass.runtime", (S) => openRuntime(moduleHost, S));
   preloads.set("jass.debug", (S) => openDebug(moduleHost, S));
   preloads.set("jass.hook", (S) => openHook(moduleHost, S));
+  preloads.set("jass.japi", (S) => openJapi(moduleHost, S));
+  preloads.set("jass.console", (S) => openConsole(moduleHost, S));
+  preloads.set("jass.log", (S) => openLog(moduleHost, S));
 
   // `require` after the sandbox sweep, so `package` is ours and `load` stays nil. This must
   // happen BEFORE `before` is captured: `require` and the two C helpers are engine names, not
@@ -660,6 +703,28 @@ export function createLuaMapScript(interp: Interpreter, seed: number, options: L
     { L, map: options.map, warnOnce: (k, m) => rt.warnOnce(k, m) },
     preloads,
   );
+
+  // --- `exec-lua:` -----------------------------------------------------------------------
+  //
+  // YD intercepts the Cheat native: a string that starts `exec-lua:` is trimmed, optionally
+  // unquoted, and `require`d (lua_loader.cpp:75-90). It is map content, not a player cheat, so
+  // it is not gated on single-player. Everything else reaches the original native untouched.
+  if (rt.natives.has("Cheat") || rt.nativeReturns.has("Cheat")) {
+    const original = rt.natives.get("Cheat");
+    rt.natives.set("Cheat", (ctx, args) => {
+      const text = asStr(args[0] ?? JNULL);
+      if (text.startsWith("exec-lua:")) {
+        const name = text.slice("exec-lua:".length).trim().replace(/^"(.*)"$/, "$1");
+        requireApi.requireModule(name);
+        return JNULL;
+      }
+      return original ? original(ctx, args) : JNULL;
+    });
+    disposers.push(() => {
+      if (original) rt.natives.set("Cheat", original);
+      else rt.natives.delete("Cheat");
+    });
+  }
 
   /** The global FUNCTION names defined right now, as a set. */
   function globalFunctionNames(): string[] {
