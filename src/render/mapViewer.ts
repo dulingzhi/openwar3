@@ -3812,6 +3812,15 @@ export class MapViewerScene {
         const d = this.items.get(typeId); // the ItemRegistry (custom .w3t overlay first)
         return d ? { name: d.name, level: d.level, classType: d.classType, powerup: d.powerup, sellable: d.sellable, pawnable: d.pawnable } : null;
       },
+      // EXGet/SetItemDataString (JAPI): the three ids YDWE documents — 1 Art, 3 Ubertip,
+      // 4 Name. The registry row is SHARED across matches, so a write is refused rather than
+      // silently leaking into the next game.
+      itemTypeString: (typeId, id) => {
+        const d = this.items.get(typeId);
+        if (!d) return undefined;
+        return id === 1 ? d.icon : id === 3 ? d.description : id === 4 ? d.name : undefined;
+      },
+      setItemTypeString: () => false,
       // ChooseRandomItem(Ex): draw from the registry's random-drop pool. The RNG is the
       // interpreter's seeded one, so the pick stays deterministic (replays / future MP).
       chooseRandomItem: (classType, level) => this.mapScript?.interp.rt.random

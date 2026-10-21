@@ -802,6 +802,11 @@ export interface EngineHooks {
   abilityField?(ref: AbilityInstanceRef, metaId: string, level: number): number | string | boolean | undefined;
   /** …and its write, into the instance's OWN copy of the row. False when nothing was written. */
   setAbilityField?(ref: AbilityInstanceRef, metaId: string, level: number, value: string | number): boolean;
+  /** One field of an ability instance by YDWE's `ABILITY_DATA_*` id (100-116, 200-220).
+   *  A string answer for 117 (UNITID) is a rawcode; the caller converts it. */
+  abilityDataField?(ref: AbilityInstanceRef, level: number, dataType: number): number | string | boolean | undefined;
+  /** The write half; false = nothing written (a read-only pack-A field). */
+  setAbilityDataField?(ref: AbilityInstanceRef, level: number, dataType: number, value: number | string): boolean;
   /** BlzStartUnitAbilityCooldown — this unit's ability goes down for `seconds`. */
   startUnitAbilityCooldown?(unitId: number, abilityId: string, seconds: number): void;
   /** One rank (0-based) of a unit's OWN ability — its instance's cost and cooldown, which a
@@ -895,6 +900,10 @@ export interface EngineHooks {
   setItemPosition?(itemId: number, x: number, y: number): void;
   /** The item TYPE's data (GetItemLevel / GetItemType / IsItemIdPowerup / …). */
   itemTypeInfo?(typeId: string): ItemTypeInfo | null;
+  /** One of the item TYPE's strings for `EXGetItemDataString` (1 Art / 3 Ubertip / 4 Name). */
+  itemTypeString?(typeId: string, id: number): string | undefined;
+  /** The write half. It must never mutate the shared registry row; false = nothing written. */
+  setItemTypeString?(typeId: string, id: number, value: string): boolean;
   /** UnitAddItem (+ …ToSlotById): give an existing item to a unit — `slot` < 0 = first
    *  free. False if the inventory is full, which is what leaves a UnitAddItemById item
    *  lying at the hero's feet (blizzard.j creates it there first, then adds it). */

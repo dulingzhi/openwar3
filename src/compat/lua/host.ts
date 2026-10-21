@@ -18,6 +18,8 @@ import { open as openLog } from "./modules/log";
 import { YD_JAPI } from "./japi/decl";
 import { registerJapi, type JapiImpl } from "./japi/registry";
 import { damageImpls } from "./japi/damage";
+import { itemImpls } from "./japi/item";
+import { abilityImpls } from "./japi/ability";
 import { pushArrayProxy } from "./modules/jarray";
 import { createSettings, LUA_NOREF, type LuaRuntimeSettings } from "./settings";
 
@@ -687,6 +689,8 @@ export function createLuaMapScript(interp: Interpreter, seed: number, options: L
   const japiImpls: Record<string, JapiImpl> = {
     EXExecuteScript: (c, a) => execScript(c, a),
     ...damageImpls(rt),
+    ...itemImpls(rt),
+    ...abilityImpls(rt),
   };
   for (const decl of YD_JAPI) registerJapi(rt, decl, japiImpls[decl.name]);
 
