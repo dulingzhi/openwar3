@@ -1,7 +1,8 @@
 # `dz_w3_plugin` → OpenWar3: porting the DzAPI native layer
 
-**Status (2026-10-21): P0 done; P1 is in progress (strings, bits, groups, text tags,
-unit DB and the system/debug subset are live; effects and selection are next).** All 394 names are generated into
+**Status (2026-10-21): P0 and P1 are DONE.** P1 covers strings, bits, groups, text tags,
+unit DB, effect extras, selection/minimap and the system/debug subset; `pnpm dzapi:test`
+pins them. P2 (the 126 frame functions) is next. All 394 names are generated into
 [`src/compat/lua/japi/dzapi-decl.ts`](../src/compat/lua/japi/dzapi-decl.ts) by
 `pnpm dzapi:decl` and registered as JAPI aliases, so `jass.japi`, `jass.common` and `_G`
 all reach them with their signatures; an unimplemented one answers its typed default and
@@ -267,7 +268,7 @@ no demo map in the corpus uses it and it cannot affect a match's simulation.
 | phase | scope | acceptance | estimate |
 |---|---|---|---:|
 | **P0 — declaration** | generate a 394-row `{name, sig, module, category}` table from the source; register every name as a native with its typed default; optional `rt.japi` aliases | every name compiles, `jass.common` reaches all of them, a call to an unimplemented one answers the typed default and logs once; a table test pins names/signatures | 0.5–1 d |
-| **P1 — pure packs** | strings, bits, groups, text tags, unit DB, effect extras, selection/minimap, debug/log/locale/map path, player-tech, `DzExecuteFunc` | synthetic tests per function; the two `JAPI` demo maps that use these run headlessly | 1–2 d |
+| **P1 — pure packs** | strings, bits, groups, text tags, unit DB, effect extras, selection/minimap, debug/log/locale/map path, player-tech, `DzExecuteFunc` | `pnpm dzapi:test` — every pack's hook translation and value | DONE |
 | **P2 — GUI/frames** | the 126 frame functions over `FrameObj`; three sub-commits: core create/layout/appearance, events/engine frames, models/simple-message/convert | `KKAPI_3/界面_ui模型lua测试` gets past `DzLoadToc` and creates/sizes a model frame; frame model remains the ONE model | 4–6 d |
 | **P3 — input/sync** | hardware (32), packet (14), build/target preview hooks | a key/mouse trigger registered by a map fires; a sync trigger fires locally; window size/FPS answers | 2–3 d |
 | **P4 — world extras** | unit/ability (28), items (5), orders (17), doodads (22), map/env (5), other (16) | per-pack synthetic tests; the JASS demo maps (with an install) exercise the names | 4–6 d |

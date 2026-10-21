@@ -1304,6 +1304,26 @@ export interface EngineHooks {
   resetSpecialEffect?(id: number): void;
   /** `EXSetEffectSpeed` — the model's animation playback rate. */
   specialEffectTimeScale?(id: number, speed: number): void;
+  /** Vertex colour as a packed 0xRRGGBB, and alpha 0-255 (`DzGetEffectVertex*`). */
+  specialEffectColor?(id: number): number;
+  specialEffectAlpha?(id: number): number;
+  /** `DzSetEffectVisible` — a script-level hide, independent of fog. */
+  setSpecialEffectVisible?(id: number, visible: boolean): void;
+  /** `DzSetEffectModel` — swap the model under the same effect id. */
+  setSpecialEffectModel?(id: number, path: string): void;
+  /** `DzSetEffectAnimation` — play a clip by INDEX; `flag` is the loop mode. */
+  setSpecialEffectSequence?(id: number, index: number, flag: number): void;
+  /** `DzBindEffect` / `DzUnbindEffect` — attach an existing effect to a unit's node. */
+  bindSpecialEffect?(id: number, unitId: number, attach: string[]): void;
+  unbindSpecialEffect?(id: number): void;
+  /** `DzGetLocalSelectUnit*` / `DzGetSelectedLeaderUnit` — the local selection as handles. */
+  localSelection?(): JassValue[];
+  localLeader?(): JassValue;
+  /** `DzWidgetSetMinimapIcon[Enable]` — a per-unit minimap glyph override. */
+  setWidgetMinimapIcon?(unitId: number, path: string): void;
+  setWidgetMinimapIconEnabled?(unitId: number, enabled: boolean): void;
+  /** A player slot's COLOUR index (`DzSetEffectTeamColor` takes a player id, not a colour). */
+  playerColor?(player: number): number;
   /** GetLocationZ — "the current surface elevation … This includes the terrain (hills or
    *  water) and walkable destructables" (jassbot). */
   surfaceZ?(x: number, y: number): number;

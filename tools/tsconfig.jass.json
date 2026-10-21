@@ -51,6 +51,8 @@
     "../src/compat/lua/japi/dzapi/system.ts",
     "../src/compat/lua/japi/dzapi/texttag.ts",
     "../src/compat/lua/japi/dzapi/unitdb.ts",
+    "../src/compat/lua/japi/dzapi/effect.ts",
+    "../src/compat/lua/japi/dzapi/selection.ts",
     "../src/compat/lua/japi/signature.ts",
     "../src/compat/lua/japi/registry.ts",
     "../src/compat/lua/japi/damage.ts",

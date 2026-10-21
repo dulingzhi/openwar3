@@ -1874,6 +1874,9 @@ export interface SimUnit {
   missileSpeed?: number;
   missileHoming?: boolean;
   preselectUIVisible?: boolean;
+  /** `DzWidgetSetMinimapIcon[Enable]` — a path stamped instead of the team dot. */
+  minimapIcon?: string;
+  minimapIconEnabled?: boolean;
   /** `EXSetUnitCollisionType`'s 24-bit mask; bit 0 is the unit-unit collision the sim's own
    *  `noCollision` already models, so that one is applied. */
   collisionMask?: number;

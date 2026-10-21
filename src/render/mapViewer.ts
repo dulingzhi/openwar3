@@ -967,6 +967,8 @@ interface SpecialFx {
   scaleXYZ: [number, number, number];
   /** `EXSetEffectSpeed` — the animation rate, and the rate this effect's own age advances. */
   speed: number;
+  /** `DzSetEffectVisible(false)` — the SCRIPT hid it; fog only adds to that. */
+  hiddenByScript?: boolean;
   /** Vertex colour and alpha, 0..1. */
   color: [number, number, number, number];
   /** A player colour index, or -1 for the model's own. */
@@ -7657,6 +7659,86 @@ export class MapViewerScene {
         fx.speed = speed;
         if (fx.inst) fx.inst.timeScale = speed;
       },
+      specialEffectColor: (id) => {
+        const fx = live(id);
+        if (!fx) return 0;
+        const [r, g, b] = fx.color;
+        return ((Math.round(r * 255) << 16) | (Math.round(g * 255) << 8) | Math.round(b * 255)) | 0;
+      },
+      specialEffectAlpha: (id) => {
+        const fx = live(id);
+        return fx ? Math.round(fx.color[3] * 255) : 0;
+      },
+      setSpecialEffectVisible: (id, visible) => {
+        const fx = live(id);
+        if (!fx) return;
+        fx.hiddenByScript = !visible;
+        this.updateSpecialFxOne(fx);
+      },
+      setSpecialEffectModel: (id, file) => {
+        const fx = live(id);
+        const path = mdlPath(file);
+        if (!fx || !path) return;
+        fx.inst?.detach();
+        fx.inst = null;
+        fx.standing = false;
+        fx.played = null;
+        fx.spent = false;
+        fx.clips = { hasBirth: false, birthStart: 0, birthSecs: 0, hasStand: false };
+        void this.loadSpecialFx(id, path, fx);
+      },
+      setSpecialEffectSequence: (id, index, flag) => {
+        const fx = live(id);
+        if (!fx || !fx.inst) return;
+        fx.inst.setSequence(index);
+        fx.inst.setSequenceLoopMode(flag === 0 ? 0 : 2);
+        fx.standing = true;
+        fx.played = ""; // the script owns the clip from now on (see updateSpecialFxOne)
+      },
+      bindSpecialEffect: (id, unitId, attach) => {
+        const fx = live(id);
+        const u = this.rts?.simView.units.get(unitId);
+        if (!fx || !u) return;
+        fx.hostId = unitId;
+        fx.attach = attach;
+        fx.parented = false;
+        fx.x = u.x;
+        fx.y = u.y;
+        if (fx.inst) {
+          (fx.inst as { setParent?: (n?: unknown) => unknown }).setParent?.(undefined);
+          fx.inst.setLocation([0, 0, 0]);
+        }
+        this.updateSpecialFxOne(fx);
+      },
+      unbindSpecialEffect: (id) => {
+        const fx = live(id);
+        if (!fx) return;
+        const world = fx.inst?.worldLocation;
+        if (world) { fx.x = world[0]; fx.y = world[1]; }
+        fx.hostId = -1;
+        fx.attach = [];
+        fx.parented = false;
+        (fx.inst as { setParent?: (n?: unknown) => unknown } | null)?.setParent?.(undefined);
+        this.placeSpecialFx(fx);
+        this.updateSpecialFxOne(fx);
+      },
+      localSelection: () => {
+        const rt = this.mapScript?.interp.rt;
+        const sim = this.rts?.simWorld;
+        if (!rt || !sim) return [];
+        return (this.rts?.selectedIds() ?? [])
+          .map((id) => sim.units.get(id))
+          .filter((u): u is NonNullable<typeof u> => !!u)
+          .map((u) => rt.unitForSim(u));
+      },
+      playerColor: (p) => this.rts?.playerColor(p) ?? p,
+      localLeader: () => {
+        const rt = this.mapScript?.interp.rt;
+        const sim = this.rts?.simWorld;
+        const id = this.rts?.leaderId() ?? 0;
+        const u = id ? sim?.units.get(id) : undefined;
+        return rt && u ? rt.unitForSim(u) : { k: "null" };
+      },
       setSpecialEffectColor: (id, r, g, b) => {
         const fx = live(id);
         if (!fx) return;
@@ -7754,7 +7836,7 @@ export class MapViewerScene {
     }
     // You cannot see an effect through the fog of war, and one that burned out in the fog
     // has nothing left to show. Same live-sight rule the dropped items use (fogItems).
-    const show = !fx.spent && this.specialFxVisible(fx);
+    const show = !fx.spent && !fx.hiddenByScript && this.specialFxVisible(fx);
     if (show !== !fx.hidden) {
       fx.hidden = !show;
       if (show) inst.show();

@@ -3,6 +3,8 @@ import { valueImpls } from "./values";
 import { systemImpls } from "./system";
 import { textTagImpls } from "./texttag";
 import { unitDbImpls } from "./unitdb";
+import { effectImpls } from "./effect";
+import { selectionImpls } from "./selection";
 
 // DzAPI P1 registration (docs/dzapi-port.md §4).
 //
@@ -14,6 +16,7 @@ import { unitDbImpls } from "./unitdb";
 export function installDzapi(rt: Runtime): void {
   const impls = {
     ...valueImpls(rt), ...systemImpls(rt), ...textTagImpls(rt), ...unitDbImpls(rt),
+    ...effectImpls(rt), ...selectionImpls(rt),
   };
   for (const [name, fn] of Object.entries(impls)) rt.natives.set(name, fn);
 }

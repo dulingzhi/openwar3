@@ -205,6 +205,15 @@ export function simHooks(sim: SimWorld, teamOf: (player: number) => number): Par
         default: break;
       }
     },
+    // DzWidgetSetMinimapIcon[Enable] — a per-unit glyph the minimap view paints.
+    setWidgetMinimapIcon: (id, path) => {
+      const u = sim.units.get(id);
+      if (u) u.minimapIcon = path;
+    },
+    setWidgetMinimapIconEnabled: (id, enabled) => {
+      const u = sim.units.get(id);
+      if (u) u.minimapIconEnabled = enabled;
+    },
     // EXSetUnitMoveType — the editor's Movement Type mask (0x01 foot, 0x02 horse, 0x04 fly,
     // 0x08 hover, 0x10 float, 0x20 amph, 0x40 unbuild). Fly/hover are air; float/amph path
     // water. The 0x40 unbuild bit has no separate pathing field here (see docs).

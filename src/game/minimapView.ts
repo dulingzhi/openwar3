@@ -176,6 +176,13 @@ export function minimapIcons(
     if (!vp.hasExplored(u)) continue;
     out.push({ x: u.x, y: u.y, icon: ICON_NEUTRAL_BUILDING });
   }
+  // DzWidgetSetMinimapIcon — a script's own glyph for ONE unit, drawn wherever the unit is
+  // explored. Its own enable switch is separate from the map's creep-display filter.
+  for (const u of world.units.values()) {
+    if (!u.minimapIcon || u.minimapIconEnabled === false) continue;
+    if (!vp.hasExplored(u)) continue;
+    out.push({ x: u.x, y: u.y, icon: u.minimapIcon });
+  }
   return out;
 }
 

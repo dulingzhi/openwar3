@@ -8087,6 +8087,14 @@ export class RtsController {
   }
 
   /** Convert a CSS click to a world ground point (for build placement). */
+  /** The local selection in insertion order, and the primary (`DzGetLocalSelectUnit*`). */
+  selectedIds(): number[] {
+    return [...this.selected];
+  }
+  leaderId(): number {
+    return this.primary ?? 0;
+  }
+
   /** `DzBlockSelectModeCommand` — a one-shot latch. The SelectMode command path consults it
    *  (P3 of docs/dzapi-port.md); for now the native stores the request without changing the
    *  player's input. */
