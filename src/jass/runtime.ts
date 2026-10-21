@@ -904,6 +904,14 @@ export interface EngineHooks {
   itemTypeString?(typeId: string, id: number): string | undefined;
   /** The write half. It must never mutate the shared registry row; false = nothing written. */
   setItemTypeString?(typeId: string, id: number, value: string): boolean;
+  /** A unit TYPE's string-array element (`EXGetUnitArrayString`): slot 10 = Name,
+   *  61 = Proper Names. undefined when the slot is not one we answer. */
+  getUnitTypeStringSlot?(typeId: string, slot: number, index: number): string | undefined;
+  /** The element COUNT of that array (`EXGetUnitInteger(uid, slot)`). */
+  getUnitTypeCount?(typeId: string, slot: number): number | undefined;
+  /** GetUnitState/SetUnitState extended ids (0x10-0x64) — see yd_jass_api/UnitState.cpp. */
+  getUnitExtendedState?(unitId: number, index: number): number | undefined;
+  setUnitExtendedState?(unitId: number, index: number, value: number): boolean;
   /** UnitAddItem (+ …ToSlotById): give an existing item to a unit — `slot` < 0 = first
    *  free. False if the inventory is full, which is what leaves a UnitAddItemById item
    *  lying at the hero's feet (blizzard.j creates it there first, then adds it). */

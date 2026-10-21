@@ -1,8 +1,8 @@
 import { lua, lauxlib, lualib, to_luastring, to_jsstring, type LuaState } from "fengari";
 import type { Interpreter } from "../../jass/interpreter";
-import type { HostFunction, Runtime } from "../../jass/runtime";
+import type { HostFunction, JassUnit, Runtime } from "../../jass/runtime";
 import { rawcodeToInt } from "../../jass/lexer";
-import { asInt, asNum, asStr, defaultForType, jStr, JNULL, type JassValue } from "../../jass/values";
+import { asInt, asNum, asStr, defaultForType, jReal, jStr, JNULL, type JassValue } from "../../jass/values";
 import { createHandleCodec, type HandleCodec, type HandleMode } from "./handles";
 import { pushValue, readValue, type ValueBridge } from "./values";
 import type { LuaInputBridge } from "./input";
@@ -22,6 +22,7 @@ import { registerJapi, type JapiImpl } from "./japi/registry";
 import { damageImpls } from "./japi/damage";
 import { itemImpls } from "./japi/item";
 import { abilityImpls } from "./japi/ability";
+import { unitImpls } from "./japi/unit";
 import { pushArrayProxy } from "./modules/jarray";
 import { createSettings, LUA_NOREF, type LuaRuntimeSettings } from "./settings";
 
@@ -693,6 +694,7 @@ export function createLuaMapScript(interp: Interpreter, seed: number, options: L
     ...damageImpls(rt),
     ...itemImpls(rt),
     ...abilityImpls(rt),
+    ...unitImpls(rt),
   };
   for (const decl of YD_JAPI) registerJapi(rt, decl, japiImpls[decl.name]);
 
@@ -737,6 +739,48 @@ export function createLuaMapScript(interp: Interpreter, seed: number, options: L
     disposers.push(() => {
       if (original) rt.natives.set("Cheat", original);
       else rt.natives.delete("Cheat");
+    });
+  }
+
+  // --- extended GetUnitState/SetUnitState ------------------------------------------------
+  //
+  // YD's one JAPI HOOK: the two standard natives gain the 0x10-0x64 ids through the sim's
+  // `getUnitExtendedState` (yd_jass_api/UnitState.cpp:142-430). Standard ids still take the
+  // original path, so nothing about a normal `GetUnitState(u, UNIT_STATE_LIFE)` changes.
+  {
+    const getOriginal = rt.natives.get("GetUnitState");
+    const setOriginal = rt.natives.get("SetUnitState");
+    if (getOriginal) {
+      rt.natives.set("GetUnitState", (ctx, args) => {
+        const idx = asInt(args[1] ?? JNULL);
+        if (idx >= 0x10) {
+          const id = rt.data<JassUnit>(args[0] ?? JNULL)?.simId;
+          const v = id !== undefined && id >= 0 ? rt.hooks?.getUnitExtendedState?.(id, idx) : undefined;
+          if (v === undefined) {
+            rt.warnOnce(`GetUnitState:${idx}`, "no extended unit state for that index — 0");
+            return jReal(0);
+          }
+          return jReal(v);
+        }
+        return getOriginal(ctx, args);
+      });
+    }
+    if (setOriginal) {
+      rt.natives.set("SetUnitState", (ctx, args) => {
+        const idx = asInt(args[1] ?? JNULL);
+        if (idx >= 0x10) {
+          const id = rt.data<JassUnit>(args[0] ?? JNULL)?.simId;
+          if (id !== undefined && id >= 0) rt.hooks?.setUnitExtendedState?.(id, idx, asNum(args[2] ?? JNULL));
+          return JNULL;
+        }
+        return setOriginal(ctx, args);
+      });
+    }
+    disposers.push(() => {
+      if (getOriginal) rt.natives.set("GetUnitState", getOriginal);
+      else rt.natives.delete("GetUnitState");
+      if (setOriginal) rt.natives.set("SetUnitState", setOriginal);
+      else rt.natives.delete("SetUnitState");
     });
   }
 
@@ -788,7 +832,7 @@ export function createLuaMapScript(interp: Interpreter, seed: number, options: L
     dispose(): void {
       // Hooks and other engine patches first: a module that wrapped a native must put it back
       // before the host functions it may call are removed.
-      for (const fn of disposers.splice(0)) {
+      for (const fn of disposers.splice(0).reverse()) {
         try { fn(); } catch (err) { console.info(`[lua] dispose: ${(err as Error).message}`); }
       }
       for (const name of published) rt.hostFunctions.delete(name);

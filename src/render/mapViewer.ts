@@ -3821,6 +3821,22 @@ export class MapViewerScene {
         return id === 1 ? d.icon : id === 3 ? d.description : id === 4 ? d.name : undefined;
       },
       setItemTypeString: () => false,
+      // EXGet/SetUnit* type-data slots: only the two arrays YDWE's own UI helpers use
+      // (KKAPI.j: 10 = Name, 61 = Proper Names). Everything else is declared-not-answered.
+      getUnitTypeStringSlot: (typeId, slot, index) => {
+        const d = this.registry.get(typeId);
+        if (!d) return undefined;
+        if (slot === 10) return index === 0 ? d.name : undefined;
+        if (slot === 61) return d.properNames[index] ?? (index === 0 ? d.name : undefined);
+        return undefined;
+      },
+      getUnitTypeCount: (typeId, slot) => {
+        const d = this.registry.get(typeId);
+        if (!d) return undefined;
+        if (slot === 10) return d.name ? 1 : 0;
+        if (slot === 61) return d.properNames.length || (d.name ? 1 : 0);
+        return undefined;
+      },
       // ChooseRandomItem(Ex): draw from the registry's random-drop pool. The RNG is the
       // interpreter's seeded one, so the pick stays deterministic (replays / future MP).
       chooseRandomItem: (classType, level) => this.mapScript?.interp.rt.random

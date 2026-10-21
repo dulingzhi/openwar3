@@ -1,4 +1,4 @@
-import { armorSoundCode, defenseTypeCode, targetedAsCode } from "../data/unitFieldCodes";
+import { armorSoundCode, ATTACK_TYPES, defenseTypeCode, defenseTypeFrom, targetedAsCode } from "../data/unitFieldCodes";
 import { jassOwnerOf, type SimWorld, type SimMine, type SimUnit, type StoredUnitState, type UnitStat } from "../sim/world";
 import type { EngineHooks, UnitSnapshot } from "../jass/runtime";
 import { MAIN_HALL_CHAINS } from "../data/races";
@@ -134,6 +134,60 @@ export function simHooks(sim: SimWorld, teamOf: (player: number) => number): Par
     },
     isPointBlighted: (x, y) => sim.isBlighted(x, y),
     setBlight: (x, y, radius, add) => sim.setBlight(x, y, radius, add),
+    // The YD extended unit-state ids (yd_jass_api/UnitState.cpp:1-140). These are the sim's
+    // own live fields; an id with no field here is deliberately left undefined so the Lua
+    // layer answers a typed default and logs it instead of inventing a number.
+    getUnitExtendedState: (id, index) => {
+      const u = sim.units.get(id);
+      if (!u) return undefined;
+      const w = (slot: number) => u.weapons.find((x) => x.slot === slot);
+      const a1 = w(0), a2 = w(1);
+      switch (index) {
+        case 0x10: return a1?.dice;
+        case 0x11: return a1?.sides;
+        case 0x12: return a1?.damage;
+        case 0x16: return a1?.range;
+        case 0x20: return u.armor;
+        case 0x23: return a1 ? Math.max(0, ATTACK_TYPES.indexOf(a1.attackType as never)) : undefined;
+        case 0x25: return a1?.cooldown;
+        case 0x26: return a1?.damagePoint;
+        case 0x27: return a1?.rangeBuffer;
+        case 0x28: return a1?.backswing;
+        case 0x30: return a2?.dice;
+        case 0x31: return a2?.sides;
+        case 0x32: return a2?.damage;
+        case 0x38: return a2?.cooldown;
+        case 0x39: return a2?.damagePoint;
+        case 0x40: return a2?.range;
+        case 0x41: return a2?.rangeBuffer;
+        case 0x44: return a2?.backswing;
+        case 0x50: return defenseTypeCode(u.armorType);
+        case 0x52: return sim.getUnitAcquireRange(id);
+        case 0x55: return a1?.minRange;
+        default: return undefined;
+      }
+    },
+    setUnitExtendedState: (id, index, value) => {
+      const u = sim.units.get(id);
+      if (!u) return false;
+      const w = (slot: number) => u.weapons.find((x) => x.slot === slot);
+      const a1 = w(0), a2 = w(1);
+      switch (index) {
+        case 0x16: if (a1) a1.range = value; return !!a1;
+        case 0x20: u.armor = value; return true;
+        case 0x25: if (a1) a1.cooldown = value; return !!a1;
+        case 0x27: if (a1) a1.rangeBuffer = value; return !!a1;
+        case 0x28: if (a1) a1.backswing = value; return !!a1;
+        case 0x38: if (a2) a2.cooldown = value; return !!a2;
+        case 0x40: if (a2) a2.range = value; return !!a2;
+        case 0x41: if (a2) a2.rangeBuffer = value; return !!a2;
+        case 0x44: if (a2) a2.backswing = value; return !!a2;
+        case 0x50: { const t = defenseTypeFrom(value); if (t) u.armorType = t; return !!t; }
+        case 0x52: sim.setUnitAcquireRange(id, value); return true;
+        case 0x55: if (a1) a1.minRange = value; return !!a1;
+        default: return false;
+      }
+    },
     // Unit state: SetUnitState/GetUnitState → sim HP/mana. state: 0=life 1=maxlife 2=mana 3=maxmana.
     setUnitState: (id, state, value) => {
       const u = sim.units.get(id);

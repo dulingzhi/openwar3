@@ -47,6 +47,7 @@
     "../src/compat/lua/japi/damage.ts",
     "../src/compat/lua/japi/item.ts",
     "../src/compat/lua/japi/ability.ts",
+    "../src/compat/lua/japi/unit.ts",
     "../src/compat/lua/modules/runtime.ts",
     "../src/compat/lua/modules/debug.ts",
     "../src/compat/lua/modules/hook.ts",
