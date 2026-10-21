@@ -832,10 +832,35 @@ data, or asset behaviour, **consult our sources** and cite what you used.
   yield, which nests exactly because the interpreter's thread protocol already yields SECONDS.
   Two things a Lua map needs that JASS does not: `__jarray` (an array is a table reading its
   type's default) and **`FourCC`** (JASS writes `'hfoo'` and Lua cannot) — the latter in JS, so
-  its sign matches the lexer's. The sandbox is CLOSED (`io`, `os`, `load`, `require` removed): a
-  map is untrusted content. It is a DYNAMIC IMPORT, so a player who never opens a Lua map never
+  its sign matches the lexer's. The sandbox is CLOSED (`io`, `os`, `load`, `loadfile`, `dofile`
+  removed; `require` is OURS — see the YD Lua / JAPI bullet below): a map is untrusted content.
+  It is a DYNAMIC IMPORT, so a player who never opens a Lua map never
   downloads a Lua interpreter, and `preloadScriptHost` fetches it one await before the script
   runs because `loadMapScript` must stay synchronous.
+- **YD Lua / JAPI:** read [`docs/lua-engine-port.md`](docs/lua-engine-port.md) and
+  [`docs/lua-engine-implementation.md`](docs/lua-engine-implementation.md) before touching
+  [`src/compat/lua/`](src/compat/lua/). This is the OTHER Lua dialect beside the official
+  `war3map.lua` front end: one fengari state whose `require` reaches the `jass.*` preloads and
+  `*.lua` in the MAP archive only (never the install or the disk), and whose modules are
+  metatable windows over `Runtime` — `jass.common/globals/runtime/debug/hook/japi/slk/message/
+  console/log/selector/code/storm`, with `bignum/debugger/ai` deliberate empty stubs. JAPI is
+  a DECLARATION table ([`japi/decl.ts`](src/compat/lua/japi/decl.ts), the 52 `yd_jass_api`
+  names) whose `(Hunit;I)Hability;` signatures fill `nativeParams`/`nativeReturns`; an
+  implemented name is ONE native for JASS, `jass.common` and `jass.japi`, and a declared-only
+  name answers its typed default ONCE rather than nil. Handles are interned userdata
+  (`handle_level` 2; 0 falls back to 1 with a note because an untyped bridge cannot tell a raw
+  handle integer from an int), `runtime.sleep` defaults TRUE here, and `math.random` draws the
+  GAME's RNG. A module built inside a map function must be built on the CALLING coroutine —
+  building on the main state returns the module name. `jass.message` is an injected
+  `LuaInputBridge` implemented by the renderer (key filter before every panel/cheat/camera
+  binding, command card slot, selection, orders through the SAME `Issue*Order` natives a
+  script uses); the compat layer never imports the renderer. `jass.slk` reads the install's
+  SLK/INI through `MappedData` and normalises INI line endings (CRLF-only parser). The corpus
+  is the KKWE3 example maps: `pnpm lua:demo` (five load; the two that fail must fail on
+  `DzLoadToc`/`aaa2`) and `pnpm lua:scan` ranks real EX/Dz usage — `EXSetUnit*` only ever uses
+  slots 10/61, and kkapi's 500+ `Dz*` names are OUT OF SCOPE unless the corpus demands one.
+  Writes are deliberately refused where the row is shared (item strings, ability data, unit
+  type slots); see the divergence table.
 - **Extreme Candy War:** read [`docs/candy-war-ai.md`](docs/candy-war-ai.md) before touching
   [`src/ai/plus/candy/`](src/ai/plus/candy/). It is Computer+ as a HERO player for Blizzard's lane
   map, seated by `startCustom` when the script has the map's four triggers (never by file name), on

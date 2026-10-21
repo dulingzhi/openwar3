@@ -1,6 +1,6 @@
 # `yd_lua_engine` → OpenWar3 — porting the Lua engine contract
 
-**Status: partially implemented (2026-10-21) — see
+**Status: implemented (2026-10-21), except the in-match performance measurement — see
 [`docs/lua-engine-implementation.md`](./lua-engine-implementation.md) for the step-by-step state.** It is the analysis of
 `KKWE3/Development/Plugin/Warcraft3/yd_lua_engine` (YDWE's Lua plugin, 4 700 lines of C++)
 and the technical plan for making OpenWar3 answer the same Lua API.

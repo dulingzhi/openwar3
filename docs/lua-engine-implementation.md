@@ -9,7 +9,8 @@ corpus scan (`tools/lua-usage-scan.cjs`) and the real demo-map test
 (`tools/lua-demo-test.cjs`, `pnpm lua:demo`) both run against the KKWE3 example maps. S18 is
 complete in BOTH halves: the module and the renderer's `LuaInputBridge` (camera pointer,
 command card, selection, and orders through the same Issue*Order natives a script uses).
-The docs/perf tail of S19 remains.
+S19's docs half is in (`CLAUDE.md` bullet + these documents); only the in-match performance
+measurement is outstanding, and it needs the developer's install + a real match.
 
 Verification in this checkout: `npx tsc --noEmit` is clean for every file these steps touch;
 the repo-wide `pnpm typecheck` still reports two errors in `src/voice/whisperWorker.ts`
