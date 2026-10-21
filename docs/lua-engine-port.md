@@ -1,6 +1,7 @@
 # `yd_lua_engine` → OpenWar3 — porting the Lua engine contract
 
-**Status: plan.** Nothing in this document is implemented yet. It is the analysis of
+**Status: partially implemented (2026-10-21) — see
+[`docs/lua-engine-implementation.md`](./lua-engine-implementation.md) for the step-by-step state.** It is the analysis of
 `KKWE3/Development/Plugin/Warcraft3/yd_lua_engine` (YDWE's Lua plugin, 4 700 lines of C++)
 and the technical plan for making OpenWar3 answer the same Lua API.
 
@@ -323,7 +324,7 @@ make Lua disagree with the sim, so:
 
 | level | representation | status |
 |---|---|---|
-| 0 | integer id | implement (fast path for scripts that want numbers) |
+| 0 | integer id | **falls back to level 1**: an untyped bridge cannot tell a handle from an ordinary integer on the way back, so every `CreateTrigger()` would reach `TriggerAddAction` as an `int` (see divergence 18) |
 | 1 | light userdata (interned box) | implement — current behaviour |
 | 2 | userdata with `__eq`, `__tostring` | implement over the **same interned boxes** |
 
@@ -949,6 +950,9 @@ phases should be dropped rather than half-built.
 | 15 | `EXGetObject` returns 0 | it is a process pointer, not an object id | never |
 | 16 | `KKHookCode*` are not implemented | they are C++ trampoline scaffolding for `jass.code`, not a map API; our `jass.code` uses the interpreter seam | never |
 | 17 | `kkapi`'s 500+ `Dz*` functions are out of scope | a decade of engine patches, not a portable library | corpus-driven, one name at a time |
+| 18 | `handle_level = 0` falls back to light userdata | our natives are untyped `(ctx, args)` functions; an integer read back is indistinguishable from a handle. YD has per-function signatures to coerce with; we have `nativeParams` now, but the bridge does not use them yet | revisit if a corpus map sets 0 and depends on raw ids |
+| 19 | `EXGet/SetItemDataString` writes are refused | the ItemRegistry row is shared by every match in the page; an override layer does not exist yet | when a map needs a written item string |
+| 20 | `EXSetAbilityData*` writes are refused | same reason for the ability TYPE row; per-INSTANCE writes already exist through the Blz field API | wire the YD ids onto the instance overlay |
 
 ### Open questions for P0
 

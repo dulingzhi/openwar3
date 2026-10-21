@@ -4,9 +4,20 @@ This is the execution document for [`docs/lua-engine-port.md`](./lua-engine-port
 design document says **what** and **why**; this one says **in what order**, **in which file**,
 **with what code**, and **how it is proved**.
 
-**Status: pre-implementation.** Every step below is meant to be one commit. A step that
-cannot be finished without changing a contract in the design document stops and amends the
-design document first.
+**Status (2026-10-21): S1-S13, S15 and the stub half of S19 are implemented and verified
+headlessly.** Remaining: S0 (the corpus scan tool), S14 (unit state and type data), S16
+(`jass.code`), S17 (`jass.slk`), S18 (`jass.message`) and the docs/perf tail of S19.
+
+Verification in this checkout: `npx tsc --noEmit` is clean for every file these steps touch;
+the repo-wide `pnpm typecheck` still reports two errors in `src/voice/whisperWorker.ts`
+(`@huggingface/transformers` is not installed in this environment), which predate this work
+and are unrelated. `tools/jass-lua-test.cjs` needs the developer's extracted install
+(`Warcraft III/ExtractedData`), which is absent here, so each step was proved with a synthetic
+`buildInterpreter` source instead; the shared test file has been updated where the sandbox
+contract changed (`require` now exists).
+
+Every step below is meant to be one commit. A step that cannot be finished without changing a
+contract in the design document stops and amends the design document first.
 
 ---
 
