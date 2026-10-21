@@ -1,6 +1,6 @@
 import type { JassUnit, Runtime } from "../../../jass/runtime";
 import { intToRawcode } from "../../../jass/lexer";
-import { asInt, asNum, jBool, jInt, jReal, jStr, JNULL, type JassValue } from "../../../jass/values";
+import { asInt, asNum, asStr, jBool, jInt, jReal, jStr, JNULL, type JassValue } from "../../../jass/values";
 import type { JapiImpl } from "./registry";
 
 // The `UnitState.cpp` half of pack A (docs/lua-engine-port.md §6.3).
@@ -30,7 +30,12 @@ export function unitImpls(rt: Runtime): Record<string, JapiImpl> {
       if (v === undefined) rt.warnOnce(`japi:EXGetUnitString:${asInt(args[1] ?? JNULL)}`, "no such type slot — empty");
       return jStr(v ?? "");
     },
-    EXSetUnitString: () => jBool(false),
+    EXSetUnitString: (_c, args) => {
+      const type = typeOf(args[0]);
+      const slot = asInt(args[1] ?? JNULL);
+      const value = asStr(args[2] ?? JNULL);
+      return jBool(rt.hooks?.setUnitTypeStringSlot?.(type, slot, 0, value) ?? false);
+    },
 
     EXGetUnitReal: (_c, args) => {
       rt.warnOnce(`japi:EXGetUnitReal:${asInt(args[1] ?? JNULL)}`, "type real slots are not answered — 0");
@@ -43,13 +48,24 @@ export function unitImpls(rt: Runtime): Record<string, JapiImpl> {
       if (v === undefined) rt.warnOnce(`japi:EXGetUnitInteger:${asInt(args[1] ?? JNULL)}`, "no such type slot — 0");
       return jInt(v ?? 0);
     },
-    EXSetUnitInteger: () => jBool(false),
+    EXSetUnitInteger: (_c, args) => {
+      const type = typeOf(args[0]);
+      const slot = asInt(args[1] ?? JNULL);
+      const value = asInt(args[2] ?? JNULL);
+      return jBool(rt.hooks?.setUnitTypeCount?.(type, slot, value) ?? false);
+    },
 
     EXGetUnitArrayString: (_c, args) => {
       const v = rt.hooks?.getUnitTypeStringSlot?.(typeOf(args[0]), asInt(args[1] ?? JNULL), asInt(args[2] ?? JNULL));
       return jStr(v ?? "");
     },
-    EXSetUnitArrayString: () => jBool(false),
+    EXSetUnitArrayString: (_c, args) => {
+      const type = typeOf(args[0]);
+      const slot = asInt(args[1] ?? JNULL);
+      const index = asInt(args[2] ?? JNULL);
+      const value = asStr(args[3] ?? JNULL);
+      return jBool(rt.hooks?.setUnitTypeStringSlot?.(type, slot, index, value) ?? false);
+    },
 
     // --- INSTANCE helpers ----------------------------------------------------------------
     EXPauseUnit: (_c, args) => {
@@ -62,12 +78,16 @@ export function unitImpls(rt: Runtime): Record<string, JapiImpl> {
       if (id !== undefined) rt.hooks?.setUnitFacing?.(id, (asNum(args[1] ?? JNULL) * Math.PI) / 180, true);
       return JNULL;
     },
-    EXSetUnitMoveType: () => {
-      rt.warnOnce("japi:EXSetUnitMoveType", "per-unit move-type override is not wired yet");
+    EXSetUnitMoveType: (_c, args) => {
+      const id = simOf(rt, args[0]);
+      if (id !== undefined) rt.hooks?.setUnitMoveType?.(id, asInt(args[1] ?? JNULL));
       return JNULL;
     },
-    EXSetUnitCollisionType: () => {
-      rt.warnOnce("japi:EXSetUnitCollisionType", "collision-bit masks are not wired yet");
+    EXSetUnitCollisionType: (_c, args) => {
+      const id = simOf(rt, args[1]);
+      if (id !== undefined) {
+        rt.hooks?.setUnitCollisionType?.(id, asInt(args[2] ?? JNULL), args[0]?.k === "bool" ? args[0].b : false);
+      }
       return JNULL;
     },
     EXGetObject: () => {

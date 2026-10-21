@@ -188,6 +188,24 @@ export function simHooks(sim: SimWorld, teamOf: (player: number) => number): Par
         default: return false;
       }
     },
+    // EXSetUnitMoveType — the editor's Movement Type mask (0x01 foot, 0x02 horse, 0x04 fly,
+    // 0x08 hover, 0x10 float, 0x20 amph, 0x40 unbuild). Fly/hover are air; float/amph path
+    // water. The 0x40 unbuild bit has no separate pathing field here (see docs).
+    setUnitMoveType: (id, mask) => {
+      const u = sim.units.get(id);
+      if (!u) return;
+      u.moveMask = mask;
+      u.flying = (mask & 0x04) !== 0 || (mask & 0x08) !== 0;
+      u.waterborne = !u.flying && ((mask & 0x10) !== 0 || (mask & 0x20) !== 0);
+    },
+    // EXSetUnitCollisionType — bit 0 is the unit-unit collision, which is `noCollision`.
+    setUnitCollisionType: (id, bit, enable) => {
+      const u = sim.units.get(id);
+      if (!u) return;
+      const mask = enable ? (u.collisionMask ?? 0) | (1 << bit) : (u.collisionMask ?? 0) & ~(1 << bit);
+      u.collisionMask = mask & 0xffffff;
+      if (bit === 0) u.noCollision = !enable;
+    },
     // Unit state: SetUnitState/GetUnitState → sim HP/mana. state: 0=life 1=maxlife 2=mana 3=maxmana.
     setUnitState: (id, state, value) => {
       const u = sim.units.get(id);

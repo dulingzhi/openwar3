@@ -109,6 +109,17 @@ export function abilityImpls(rt: Runtime): Record<string, JapiImpl> {
       const v = rt.hooks?.abilityDataField?.({ kind: "unit", owner: -1, abilId: code }, level, asInt(args[2] ?? JNULL));
       return jStr(typeof v === "string" ? v : typeof v === "number" ? String(v) : "");
     },
+    // The metamorphosis hack (YDWEUnitTransform): the "normal form unit" is DataA.
+    // `EXSetAbilityAEmeUnitID` is the same call under the spelling some demo maps declare.
+    EXSetAbilityAEmeDataA: (_c, args) => {
+      const ref = refOf(rt, args[0]);
+      return jBool(!!ref && write(ref, 1, 108, asInt(args[1] ?? JNULL)));
+    },
+    EXSetAbilityAEmeUnitID: (_c, args) => {
+      const ref = refOf(rt, args[0]);
+      return jBool(!!ref && write(ref, 1, 108, asInt(args[1] ?? JNULL)));
+    },
+
     EXSetAbilityString: (_c, args) => {
       const code = intToRawcode(asInt(args[0] ?? JNULL));
       const level = Math.max(1, asInt(args[1] ?? JNULL));

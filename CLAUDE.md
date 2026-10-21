@@ -859,8 +859,12 @@ data, or asset behaviour, **consult our sources** and cite what you used.
   is the KKWE3 example maps: `pnpm lua:demo` (five load; the two that fail must fail on
   `DzLoadToc`/`aaa2`) and `pnpm lua:scan` ranks real EX/Dz usage — `EXSetUnit*` only ever uses
   slots 10/61, and kkapi's 500+ `Dz*` names are OUT OF SCOPE unless the corpus demands one.
-  Writes are deliberately refused where the row is shared (item strings, ability data, unit
-  type slots); see the divergence table.
+  Every `yd_jass_api` name has an implementation (the 52 `japi_add` + the demo's
+  `EXSetAbilityAEmeUnitID` spelling + the 3 `japi_hook` aliases). Writes to a shared row are
+  PER-MAP CLONES (`ItemRegistry.setCustom` / `AbilityRegistry.setBuffString`), and unit TYPE
+  writes answer only slots 10/61 — the raw `CUnitData` slots the corpus proves. The effect
+  matrix is an Euler yaw/pitch/roll approximation and collision bits other than 0 are stored
+  only; the divergence table says so.
 - **Extreme Candy War:** read [`docs/candy-war-ai.md`](docs/candy-war-ai.md) before touching
   [`src/ai/plus/candy/`](src/ai/plus/candy/). It is Computer+ as a HERO player for Blizzard's lane
   map, seated by `startCustom` when the script has the map's four triggers (never by file name), on

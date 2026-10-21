@@ -61,13 +61,14 @@ import { readW3i } from "../compat/w3i";
 import { preloadLuaHost } from "../compat/lua/index";
 import type { LuaInputBridge, LuaInputEvent } from "../compat/lua/input";
 import { jHandle, jReal, jStr } from "../jass/values";
-import { rawcodeToInt } from "../jass/lexer";
+import { intToRawcode, rawcodeToInt } from "../jass/lexer";
+import { blendButtonBlp } from "./blpBlend";
 import { MAP_MISC_FILE, NO_MAP_MISC, parseMapMisc, type MapMisc } from "../data/mapMisc";
 import { loadUberSplatRegistry, type UberSplatDef, type UberSplatRegistry } from "../data/ubersplats";
 import { loadLightningRegistry } from "../data/lightning";
 import { specialFxPhaseAt, type SpecialFxClips } from "./specialFxClock";
 import { pickEffectSequence, yawPitchRollQuat } from "./effectAnim";
-import { loadAbilityRegistry, mdlPath, type AbilityRegistry, type AbilityDef, type BuffFx, isRepairCode, KNOWN_ABILITIES, TREE_UPGRADE_ABILITY, requiredHeroLevel, morphFlags, MORPH_FLAG_PERMANENT, MORPH_FLAG_REQUIRES_PAYMENT, type AbilityLevel, iconAt, isStance } from "../data/abilities";
+import { loadAbilityRegistry, mdlPath, targetFlagMask, type AbilityRegistry, type AbilityDef, type BuffFx, isRepairCode, KNOWN_ABILITIES, TREE_UPGRADE_ABILITY, requiredHeroLevel, morphFlags, MORPH_FLAG_PERMANENT, MORPH_FLAG_REQUIRES_PAYMENT, type AbilityLevel, iconAt, isStance } from "../data/abilities";
 import { isDesktopApp } from "../assets/nativeInstall";
 import { loadCommandStrings, disabledIconPath, placeholderIcon, type CommandStrings } from "../data/commandStrings";
 import { resolveTipRefs } from "../data/tipRefs";
@@ -826,6 +827,8 @@ interface SpawnInstance {
   setScene(scene: unknown): void;
   setTeamColor(id: number): void;
   setUniformScale(s: number): void;
+  /** Non-uniform local scale (`Node.setScale`); optional for the viewer's own stand-ins. */
+  setScale?(v: ArrayLike<number>): unknown;
   setVertexColor(c: ArrayLike<number>): void;
   setTexture?(index: number, texture: unknown): void;
   frame: number;
@@ -960,6 +963,10 @@ interface SpecialFx {
   pitch: number;
   roll: number;
   scale: number;
+  /** `EXEffectMatScale` — a per-axis scale; `scale` is kept as its X for the uniform getter. */
+  scaleXYZ: [number, number, number];
+  /** `EXSetEffectSpeed` — the animation rate, and the rate this effect's own age advances. */
+  speed: number;
   /** Vertex colour and alpha, 0..1. */
   color: [number, number, number, number];
   /** A player colour index, or -1 for the model's own. */
@@ -1081,6 +1088,55 @@ interface FogDoodadTable {
 /** The campaign screens' race stamps (`UI\Glues\Loading\Backgrounds\Campaigns\<X>Symbol.blp`) —
  *  what the voice plates wear beside a name. */
 const RACE_SYMBOL: Record<PlayableRace, string> = { human: "Human", orc: "Orc", undead: "Undead", nightelf: "NightElf" };
+
+/** YDWE's ABILITY_DATA_* id → the `field` name AbilityMetaData uses (docs/lua-engine-port.md
+ *  §6.3; YDWEAbilityState.j documents every id). `data` selects one Data slot. */
+function abilityDataTypeSpec(t: number): { field: string; data?: number } | null {
+  if (t >= 108 && t <= 116) return { field: "data", data: t - 107 };
+  switch (t) {
+    case 101: return { field: "cast" };
+    case 102: return { field: "dur" };
+    case 103: return { field: "herodur" };
+    case 104: return { field: "cost" };
+    case 105: return { field: "cool" };
+    case 106: return { field: "area" };
+    case 107: return { field: "rng" };
+    case 117: return { field: "unitid" };
+    case 200: return { field: "hotkey" };
+    case 201: return { field: "unhotkey" };
+    case 202: return { field: "researchhotkey" };
+    case 203: return { field: "name" };
+    case 204: return { field: "art" };
+    case 205: return { field: "targetart" };
+    case 206: return { field: "casterart" };
+    case 207: return { field: "effectart" };
+    case 208: return { field: "areaeffectart" };
+    case 209: return { field: "missileart" };
+    case 210: return { field: "specialart" };
+    case 211: return { field: "lightningeffect" };
+    case 212: return { field: "bufftip" };
+    case 213: return { field: "buffubertip" };
+    case 214: return { field: "researchtip" };
+    case 215: return { field: "tip" };
+    case 216: return { field: "untip" };
+    case 217: return { field: "researchubertip" };
+    case 218: return { field: "ubertip" };
+    case 219: return { field: "unubertip" };
+    case 220: return { field: "unart" };
+    default: return null; // 100 (TARGS) is computed from targetFlags, not a meta row
+  }
+}
+
+/** The AbilityMetaData row id for a `(field, data slot)` pair, or undefined. */
+function abilityMetaId(meta: MappedData, field: string, data?: number): string | undefined {
+  for (const [id, row] of Object.entries(meta.map)) {
+    const r = row as unknown as { string(k: string): string | undefined };
+    if ((r.string("field") ?? "").toLowerCase() !== field) continue;
+    if (data !== undefined && Number(r.string("data") ?? 0) !== data) continue;
+    return id;
+  }
+  return undefined;
+}
 
 export class MapViewerScene {
   // The game camera's shape — what the view opens at and what ResetToGameCamera returns to
@@ -1871,7 +1927,7 @@ export class MapViewerScene {
 
     // Map archive, then tileset archive, then the install — one stable blob URL per path
     // (render/assetSolver.ts says why each layer is there).
-    const mapFiles: MapFileLayer = { archive: null, epoch: 0 };
+    const mapFiles: MapFileLayer = { archive: null, epoch: 0, virtual: new Map(), virtualEpoch: 0 };
     const solver = createAssetSolver(vfs, mapFiles, baseUrls, created);
 
     const viewer = new ViewerClass(canvas, solver, false);
@@ -3815,6 +3871,19 @@ export class MapViewerScene {
         const d = this.items.get(typeId); // the ItemRegistry (custom .w3t overlay first)
         return d ? { name: d.name, level: d.level, classType: d.classType, powerup: d.powerup, sellable: d.sellable, pawnable: d.pawnable } : null;
       },
+      // EXDisplayChat (JAPI): a line that reads as the given player's chat. showChat, not
+      // deliverChat — the original is a display and does not raise chat triggers.
+      displayChat: (player, recipient, message) => {
+        const scope = recipient === 1 ? "allies" : recipient === 2 ? "observers" : recipient === 3 ? "private" : "all";
+        this.showChat({ from: player, text: message, target: scope === "private" ? { scope, player } : { scope } });
+      },
+      // EXGet/SetBuffDataString (JAPI): 1 Art, 2 Tip, 3 Ubertip, straight off the buff row.
+      buffString: (buffId, id) => {
+        const b = this.abilities.buff(buffId);
+        if (!b) return undefined;
+        return id === 1 ? b.icon : id === 2 ? b.name : id === 3 ? b.tip : undefined;
+      },
+      setBuffString: (buffId, id, value) => this.abilities.setBuffString(buffId, id, value),
       // EXGet/SetItemDataString (JAPI): the three ids YDWE documents — 1 Art, 3 Ubertip,
       // 4 Name. The registry row is SHARED across matches, so a write is refused rather than
       // silently leaking into the next game.
@@ -3823,7 +3892,114 @@ export class MapViewerScene {
         if (!d) return undefined;
         return id === 1 ? d.icon : id === 3 ? d.description : id === 4 ? d.name : undefined;
       },
-      setItemTypeString: () => false,
+      // EXDclareButtonIcon / EXBlendButtonIcon (JAPI): the blend is A OVER B, per channel,
+      // straight from DisableButtonBlp.cpp:105-108; 64x64, encoded as a paletted BLP.
+      declareButtonIcon: (path) => { this.iconHistory.set(this.basenameLower(path), path); },
+      blendButtonIcon: (inputA, inputB, output) => {
+        const a = this.readBlpForBlend(inputA);
+        const b = this.readBlpForBlend(inputB);
+        if (!a || !b) return false;
+        const bytes = blendButtonBlp(a, b);
+        if (!bytes) return false;
+        const virtual = this.mapFiles.virtual ?? (this.mapFiles.virtual = new Map());
+        virtual.set(output, bytes);
+        virtual.set(output.toLowerCase(), bytes);
+        this.mapFiles.virtualEpoch = (this.mapFiles.virtualEpoch ?? 0) + 1;
+        this.iconHistory.set(this.basenameLower(output), output);
+        this.iconCache.delete(output);
+        this.iconCache.delete(output.toLowerCase());
+        return true;
+      },
+      setItemTypeString: (typeId, id, value) => {
+        const d = this.items.get(typeId);
+        if (!d) return false;
+        const copy = { ...d };
+        if (id === 1) copy.icon = value;
+        else if (id === 3) copy.description = value;
+        else if (id === 4) copy.name = value;
+        else return false;
+        // The registry is per map (custom overlay), so a clone leaked nowhere else.
+        this.items.setCustom(typeId, copy);
+        return true;
+      },
+      // EXGet/SetAbilityData* (JAPI): YDWE's ABILITY_DATA_* ids. Reads ask the INSTANCE
+      // first (a map's own Blz/EX write lives there) and fall back to the type row; writes
+      // go through the same per-instance overlay, routed by AbilityMetaData.
+      abilityDataField: (ref, level, dataType) => {
+        const def = this.abilities.get(ref.abilId);
+        if (!def) return undefined;
+        const i = Math.max(0, Math.min(level - 1, def.levelData.length - 1));
+        const lv = def.levelData[i];
+        const data = (n: number): number => {
+          const v = lv?.data[n];
+          return typeof v === "number" && Number.isFinite(v) ? v : 0;
+        };
+        const hot = (s: string): number => (s ? s.charCodeAt(0) : 0);
+
+        const spec = abilityDataTypeSpec(dataType);
+        const metaId = spec && this.abilities.meta ? abilityMetaId(this.abilities.meta, spec.field, spec.data) : undefined;
+        if (metaId) {
+          const inst = this.rts?.simWorld.abilityInstanceField(ref, metaId, level);
+          if (inst !== undefined) return inst;
+        }
+
+        switch (dataType) {
+          case 100: return targetFlagMask(def.targetFlags);
+          case 101: return lv?.castTime ?? 0;
+          case 102: return lv?.duration ?? 0;
+          case 103: return lv?.heroDuration ?? 0;
+          case 104: return lv?.cost ?? 0;
+          case 105: return lv?.cooldown ?? 0;
+          case 106: return lv?.area ?? 0;
+          case 107: return lv?.castRange ?? 0;
+          case 108: case 109: case 110: case 111: case 112:
+          case 113: case 114: case 115: case 116:
+            return data(dataType - 108);
+          case 117: return lv?.summon ?? "";
+          case 200: return hot(def.hotkey);
+          case 201: return hot(def.unHotkey);
+          case 202: return hot(def.researchHotkey);
+          case 203: return def.name;
+          case 204: return def.icon;
+          case 205: return def.targetArt;
+          case 206: return def.casterArt;
+          case 207: return def.effectArt;
+          case 208: return "";
+          case 209: return def.missileArt;
+          case 210: return def.specialArt;
+          case 211: return "";
+          case 212: {
+            const b = lv?.buffs[0] ? this.abilities.buff(lv.buffs[0]) : undefined;
+            return b?.name ?? "";
+          }
+          case 213: {
+            const b = lv?.buffs[0] ? this.abilities.buff(lv.buffs[0]) : undefined;
+            return b?.tip ?? "";
+          }
+          case 214: return def.researchTip;
+          case 215: return def.tips[i] ?? "";
+          case 216: return def.unTip;
+          case 217: return def.researchUberTip;
+          case 218: return def.uberTips[i] ?? "";
+          case 219: return def.unUberTip;
+          case 220: return def.unIcon;
+          default: return undefined;
+        }
+      },
+      setAbilityDataField: (ref, level, dataType, value) => {
+        if (dataType === 100) return false; // the target mask is derived, not stored
+        const meta = this.abilities.meta;
+        const spec = abilityDataTypeSpec(dataType);
+        if (!meta || !spec) return false;
+        const id = abilityMetaId(meta, spec.field, spec.data);
+        if (!id) return false;
+        const row = meta.getRow(id) as unknown as { string(k: string): string | undefined } | undefined;
+        const type = (row?.string("type") ?? "").toLowerCase();
+        const v = typeof value === "number" && (type === "unitid" || type === "abilcode" || type === "string")
+          ? intToRawcode(value)
+          : value;
+        return this.rts?.simWorld.setAbilityInstanceField(ref, id, level, v) ?? false;
+      },
       // EXGet/SetUnit* type-data slots: only the two arrays YDWE's own UI helpers use
       // (KKAPI.j: 10 = Name, 61 = Proper Names). Everything else is declared-not-answered.
       getUnitTypeStringSlot: (typeId, slot, index) => {
@@ -3839,6 +4015,37 @@ export class MapViewerScene {
         if (slot === 10) return d.name ? 1 : 0;
         if (slot === 61) return d.properNames.length || (d.name ? 1 : 0);
         return undefined;
+      },
+      setUnitTypeStringSlot: (typeId, slot, index, value) => {
+        const d = this.registry.get(typeId);
+        if (!d) return false;
+        const copy = { ...d };
+        if (slot === 10) {
+          if (index !== 0) return false;
+          copy.name = value;
+        } else if (slot === 61) {
+          const names = [...d.properNames];
+          names[index] = value;
+          copy.properNames = names;
+        } else return false;
+        this.registry.setCustom(typeId, copy); // per map, cleared on map change
+        return true;
+      },
+      setUnitTypeCount: (typeId, slot, count) => {
+        const d = this.registry.get(typeId);
+        if (!d) return false;
+        const copy = { ...d };
+        const n = Math.max(0, count);
+        if (slot === 10) {
+          if (n === 0) copy.name = "";
+        } else if (slot === 61) {
+          const names = [...d.properNames];
+          while (names.length < n) names.push(d.name);
+          names.length = n;
+          copy.properNames = names;
+        } else return false;
+        this.registry.setCustom(typeId, copy);
+        return true;
       },
       // ChooseRandomItem(Ex): draw from the registry's random-drop pool. The RNG is the
       // interpreter's seeded one, so the pick stays deterministic (replays / future MP).
@@ -7256,7 +7463,8 @@ export class MapViewerScene {
       inst: null, age: 0, spent: false, standing: false, standIdx: -1,
       clips: { hasBirth: false, birthStart: 0, birthSecs: 0, hasStand: false },
       hidden: true, hostId, attach, parented: false, x, y, doomed: false,
-      z: null, yaw: 0, pitch: 0, roll: 0, scale: 1, color: [1, 1, 1, 1], teamColor: -1, tags: [], played: null,
+      z: null, yaw: 0, pitch: 0, roll: 0, scale: 1, scaleXYZ: [1, 1, 1], speed: 1,
+      color: [1, 1, 1, 1], teamColor: -1, tags: [], played: null,
     };
     this.specialFx.set(id, fx);
     void this.loadSpecialFx(id, model, fx);
@@ -7349,7 +7557,8 @@ export class MapViewerScene {
   private applySpecialFxLook(fx: SpecialFx): void {
     const inst = fx.inst;
     if (!inst) return;
-    inst.setUniformScale(fx.scale);
+    if (inst.setScale) inst.setScale(fx.scaleXYZ);
+    else inst.setUniformScale(fx.scale);
     if (fx.hostId < 0) inst.setRotation(yawPitchRollQuat(fx.yaw, fx.pitch, fx.roll));
     inst.setVertexColor(fx.color);
     if (fx.teamColor >= 0) inst.setTeamColor(fx.teamColor);
@@ -7395,7 +7604,39 @@ export class MapViewerScene {
         const fx = live(id);
         if (!fx) return;
         fx.scale = scale;
+        fx.scaleXYZ = [scale, scale, scale];
         this.applySpecialFxLook(fx);
+      },
+      setSpecialEffectScaleVector: (id, x, y, z) => {
+        const fx = live(id);
+        if (!fx) return;
+        fx.scale = x;
+        fx.scaleXYZ = [x, y, z];
+        this.applySpecialFxLook(fx);
+      },
+      specialEffectScale: (id) => live(id)?.scale ?? 0,
+      rotateSpecialEffect: (id, axis, radians) => {
+        const fx = live(id);
+        if (!fx) return;
+        // Local axes, matching the renderer's yaw/pitch/roll order (Z, Y, X).
+        if (axis === "z") fx.yaw += radians;
+        else if (axis === "y") fx.pitch += radians;
+        else fx.roll += radians;
+        this.applySpecialFxLook(fx);
+      },
+      resetSpecialEffect: (id) => {
+        const fx = live(id);
+        if (!fx) return;
+        fx.yaw = fx.pitch = fx.roll = 0;
+        fx.scale = 1;
+        fx.scaleXYZ = [1, 1, 1];
+        this.applySpecialFxLook(fx);
+      },
+      specialEffectTimeScale: (id, speed) => {
+        const fx = live(id);
+        if (!fx) return;
+        fx.speed = speed;
+        if (fx.inst) fx.inst.timeScale = speed;
       },
       setSpecialEffectColor: (id, r, g, b) => {
         const fx = live(id);
@@ -7462,7 +7703,7 @@ export class MapViewerScene {
         this.destroySpecialFx(id);
         continue;
       }
-      fx.age += dt;
+      fx.age += dt * (fx.speed || 1);
       this.updateSpecialFxOne(fx);
     }
   }
@@ -13920,10 +14161,11 @@ export class MapViewerScene {
     // units and its war3mapSkin.txt name icons it imports. Such a path is cached under the MOUNT,
     // so the next map's `war3mapImported\x.blp` is never the last one's picture.
     const map = this.mapFiles.archive;
-    const key = map?.exists(path) ? `map${this.mapFiles.epoch}:${path}` : path;
+    const virt = this.mapFiles.virtual?.get(path) ?? this.mapFiles.virtual?.get(path.toLowerCase());
+    const key = virt ? `virtual${this.mapFiles.epoch}:${this.mapFiles.virtualEpoch ?? 0}:${path}` : map?.exists(path) ? `map${this.mapFiles.epoch}:${path}` : path;
     let url = this.iconCache.get(key);
     if (url === undefined) {
-      const bytes = key === path ? this.vfs.rawBytes(path) : map!.rawBytes(path);
+      const bytes = virt ?? (key === path ? this.vfs.rawBytes(path) : map!.rawBytes(path));
       url = bytes ? blpToDataUrl(bytes) : null;
       // The LAST RESORT (docs/icons.md): a button icon that is neither in the install nor
       // derivable from it (vfs/derivedArt.ts) is drawn as the engine's own placeholder,
@@ -17000,6 +17242,26 @@ export class MapViewerScene {
       : back <= 0 ? 1 : 1 - back / SKIP_FADE_IN;
     this.cinematic?.setSkipCover(alpha);
     if (alpha <= 0) this.cinematicSkip = null;
+  }
+
+  /** `EXDclareButtonIcon` — basename(lower) → full path, so a later blend may name either. */
+  private iconHistory = new Map<string, string>();
+
+  private basenameLower(path: string): string {
+    return (path.split(/[\/]/).pop() ?? path).toLowerCase();
+  }
+
+  /** The bytes of an EXBlend input: a script-made file, then the map, then the install. */
+  private readBlpForBlend(path: string): Uint8Array | null {
+    const virt = this.mapFiles.virtual;
+    const direct = virt?.get(path) ?? virt?.get(path.toLowerCase());
+    if (direct) return direct;
+    const full = this.iconHistory.get(this.basenameLower(path));
+    if (full) {
+      const hit = virt?.get(full) ?? virt?.get(full.toLowerCase());
+      if (hit) return hit;
+    }
+    return this.assetFiles().rawBytes(path) ?? null;
   }
 
   /** The app half of `jass.message` (src/compat/lua/input.ts). */

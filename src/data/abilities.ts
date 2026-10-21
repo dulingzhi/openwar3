@@ -138,6 +138,30 @@ export function normalizeTargetFlags(list: string | readonly string[]): string[]
   return out;
 }
 
+/**
+ * The `targs1` bit MASK, which `EXGetAbilityDataInteger(abil, level, 100)` returns. The bit
+ * positions are the ones YDWE's own smart-cast demo enumerates (its `FLAG` table in
+ * `JAPI/Lua-智能施法`); the words are our canonical `targetFlags`.
+ */
+const ABILITY_TARGET_BITS: Readonly<Record<string, number>> = {
+  ground: 1 << 1, air: 1 << 2, structure: 1 << 3, ward: 1 << 4, item: 1 << 5,
+  tree: 1 << 6, wall: 1 << 7, debris: 1 << 8, decoration: 1 << 9, bridge: 1 << 10,
+  terrain: 1 << 11, self: 1 << 12, player: 1 << 13, allies: 1 << 14, neutral: 1 << 15,
+  enemy: 1 << 16, vuln: 1 << 20, invu: 1 << 21, hero: 1 << 22, nonhero: 1 << 23,
+  alive: 1 << 24, dead: 1 << 25, organic: 1 << 26, mechanical: 1 << 27,
+  "non-sapper": 1 << 28, sapper: 1 << 29, "non-ancient": 1 << 30, ancient: 1 << 31,
+};
+
+/** `targs1` as the engine's integer mask (0 for a row that names none). */
+export function targetFlagMask(flags: readonly string[]): number {
+  let mask = 0;
+  for (const f of flags) {
+    const bit = ABILITY_TARGET_BITS[f] ?? (f === "friend" ? ABILITY_TARGET_BITS.allies : undefined);
+    if (bit) mask |= bit;
+  }
+  return mask | 0;
+}
+
 /** One persistent model a buff hangs on the unit it is applied to, with the
  *  attachment point it rides. A buff row can list SEVERAL — Bloodlust puts a
  *  model on each hand, Spiked Carapace four on the chest (see parseBuffFx). */
@@ -1132,6 +1156,21 @@ export class AbilityRegistry {
    *  applyAbilityMods), kept for the run-time twin of those edits: a script writing ONE unit's
    *  or ONE item's ability field (`BlzSetAbility…Field`, objectData.ts writeAbilityField). */
   meta: MappedData | null = null;
+  /** `EXSetBuffDataString` — override ONE buff row's icon/name/tooltip for this map. The
+   *  stock table is shared, so the row is CLONED and replaced in this registry's own map. */
+  setBuffString(buffId: string, id: number, value: string): boolean {
+    const key = buffId.toLowerCase();
+    const b = this.buffs.get(key);
+    if (!b) return false;
+    const copy = { ...b };
+    if (id === 1) copy.icon = value;
+    else if (id === 2) copy.name = value;
+    else if (id === 3) copy.tip = value;
+    else return false;
+    this.buffs.set(key, copy);
+    return true;
+  }
+
   /** The persistent models a given buff id hangs on its holder ([] if unknown). */
   buffFx(buffId: string): BuffFx[] {
     return this.buff(buffId)?.fx ?? [];

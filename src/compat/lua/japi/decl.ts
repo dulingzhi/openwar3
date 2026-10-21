@@ -41,6 +41,9 @@ export const YD_JAPI: readonly JapiDecl[] = [
   { name: "EXGetAbilityDataString", param: "(Hability;II)S" },
   { name: "EXSetAbilityDataString", param: "(Hability;IIS)B" },
   { name: "EXSetAbilityAEmeDataA", param: "(Hability;I)B" },
+  // Not in the plugin's own registration list, but the 单位变身 / 单位晕眩 demo maps declare
+  // and call this name. It is the same DataA write (see AbilityState.cpp:764-773).
+  { name: "EXSetAbilityAEmeUnitID", param: "(Hability;I)B" },
   { name: "EXGetBuffDataString", param: "(II)S" },
   { name: "EXSetBuffDataString", param: "(IIS)B" },
   { name: "EXGetAbilityString", param: "(III)S" },

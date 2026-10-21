@@ -1861,6 +1861,13 @@ export interface SimUnit {
   working: boolean; // chopping (renderer plays the attack animation)
   atNode: boolean; // parked at the resource (approach finished — stop pathing)
   noCollision: boolean; // ghosts through other units (mining workers, WC3-style)
+  /** `EXSetUnitMoveType`'s mask (0x01 foot, 0x02 horse, 0x04 fly, 0x08 hover, 0x10 float,
+   *  0x20 amph, 0x40 unbuild). Stored so a later read/derivation can see it; the fly/float
+   *  bits drive `flying`/`waterborne`. */
+  moveMask?: number;
+  /** `EXSetUnitCollisionType`'s 24-bit mask; bit 0 is the unit-unit collision the sim's own
+   *  `noCollision` already models, so that one is applied. */
+  collisionMask?: number;
   /**
    * `SetUnitPathing(u, false)` — the SCRIPT's collision switch, and a stronger thing than
    * `noCollision` beside it.

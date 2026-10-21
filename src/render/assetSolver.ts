@@ -37,6 +37,10 @@ export type Solver = (src: unknown, params?: { tileset?: string }) => unknown;
 export interface MapFileLayer {
   archive: DataSource | null;
   epoch: number;
+  /** Virtual files a SCRIPT made at run time (`EXBlendButtonIcon`), path → bytes. */
+  virtual?: Map<string, Uint8Array>;
+  /** Bumped when a virtual file changes, so the solver mints a fresh blob URL. */
+  virtualEpoch?: number;
 }
 
 /**
@@ -60,6 +64,9 @@ export function createAssetSolver(vfs: DataSource, mapFiles: MapFileLayer, baseU
   return (src, params) => {
     if (typeof src !== "string") return src; // in-memory loads pass through
     const logical = src.replace(/\//g, "\\");
+    // A script-made file wins over the map and the install: it exists only in memory.
+    const virt = mapFiles.virtual?.get(logical) ?? mapFiles.virtual?.get(logical.toLowerCase());
+    if (virt) return mint(`virtual${mapFiles.epoch}:${mapFiles.virtualEpoch ?? 0}:${logical.toLowerCase()}`, () => virt) ?? src;
     const map = mapFiles.archive;
     if (map) {
       const url = mint(`map${mapFiles.epoch}:${logical.toLowerCase()}`, () => map.rawBytes(logical));

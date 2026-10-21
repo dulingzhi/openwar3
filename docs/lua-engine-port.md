@@ -953,8 +953,14 @@ phases should be dropped rather than half-built.
 | 16 | `KKHookCode*` are not implemented | they are C++ trampoline scaffolding for `jass.code`, not a map API; our `jass.code` uses the interpreter seam | never |
 | 17 | `kkapi`'s 500+ `Dz*` functions are out of scope | a decade of engine patches, not a portable library | corpus-driven, one name at a time |
 | 18 | `handle_level = 0` falls back to light userdata | our natives are untyped `(ctx, args)` functions; an integer read back is indistinguishable from a handle. YD has per-function signatures to coerce with; we have `nativeParams` now, but the bridge does not use them yet | revisit if a corpus map sets 0 and depends on raw ids |
-| 19 | `EXGet/SetItemDataString` writes are refused | the ItemRegistry row is shared by every match in the page; an override layer does not exist yet | when a map needs a written item string |
-| 20 | `EXSetAbilityData*` writes are refused | same reason for the ability TYPE row; per-INSTANCE writes already exist through the Blz field API | wire the YD ids onto the instance overlay |
+
+| 20 | `EXSetAbilityData*` writes are NOT refused any more | S13's read-only first cut was replaced: the YD ids are routed through `AbilityMetaData` onto the per-instance overlay | — |
+| 21 | `EXSetItemDataString` writes a per-map CLONE of the item row | the registry row is shared across matches; `ItemRegistry.setCustom` is per map | — |
+| 22 | `EXSetBuffDataString` writes a per-map CLONE of the buff row | same reason (`AbilityRegistry.setBuffString`) | — |
+| 23 | unit TYPE writes answer only slots 10 / 61 | those are the only raw `CUnitData` slots the corpus proves (and the only ones in KKAPI's name helpers) | source the full slot table |
+| 24 | `EXEffectMatRotate*` accumulate EULER yaw/pitch/roll, not an arbitrary 3x3 matrix | the renderer's effect transform is an orientation; the original multiplies a matrix | if a map composes rotations in a non-Euler order |
+| 25 | `EXSetUnitCollisionType` maps bit 0 to the sim's unit-unit `noCollision`; other bits are stored only | the original writes a private 24-bit movement mask whose other bits are not documented here | RE the mask, then map each bit |
+| 26 | `EXBlendButtonIcon` encodes a PALETTED BLP1 (our encoder), not the original's quality-95 BLP | 256 colours is ample for a 64x64 icon and the solver reads it; the pixels are the original's formula | use a JPEG-coded BLP if a visual diff demands it |
 
 ### Open questions for P0
 

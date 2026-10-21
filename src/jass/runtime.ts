@@ -900,6 +900,17 @@ export interface EngineHooks {
   setItemPosition?(itemId: number, x: number, y: number): void;
   /** The item TYPE's data (GetItemLevel / GetItemType / IsItemIdPowerup / …). */
   itemTypeInfo?(typeId: string): ItemTypeInfo | null;
+  /** `EXDclareButtonIcon` — remember basename → path so a later blend may name either. */
+  declareButtonIcon?(path: string): void;
+  /** `EXBlendButtonIcon` — A over B into a virtual 64x64 BLP at `output`. */
+  blendButtonIcon?(inputA: string, inputB: string, output: string): boolean;
+  /** `EXDisplayChat` — put a line on screen as if `player` said it. Recipients: 0 all,
+   *  1 allies, 2 observers, 3 private (YDWEJapiOther.j). A DISPLAY, not a chat send. */
+  displayChat?(player: number, recipient: number, message: string): void;
+  /** A buff row's string for `EXGetBuffDataString` (1 Art / 2 Tip / 3 Ubertip). */
+  buffString?(buffId: string, id: number): string | undefined;
+  /** Its write half: a PER-MAP override of that one row. */
+  setBuffString?(buffId: string, id: number, value: string): boolean;
   /** One of the item TYPE's strings for `EXGetItemDataString` (1 Art / 3 Ubertip / 4 Name). */
   itemTypeString?(typeId: string, id: number): string | undefined;
   /** The write half. It must never mutate the shared registry row; false = nothing written. */
@@ -909,9 +920,17 @@ export interface EngineHooks {
   getUnitTypeStringSlot?(typeId: string, slot: number, index: number): string | undefined;
   /** The element COUNT of that array (`EXGetUnitInteger(uid, slot)`). */
   getUnitTypeCount?(typeId: string, slot: number): number | undefined;
+  /** `EXSetUnitArrayString` — a per-MAP override of slot 10 / 61 element `index`. */
+  setUnitTypeStringSlot?(typeId: string, slot: number, index: number, value: string): boolean;
+  /** `EXSetUnitInteger`'s array-count write (the count slot beside 10 / 61). */
+  setUnitTypeCount?(typeId: string, slot: number, count: number): boolean;
   /** GetUnitState/SetUnitState extended ids (0x10-0x64) — see yd_jass_api/UnitState.cpp. */
   getUnitExtendedState?(unitId: number, index: number): number | undefined;
   setUnitExtendedState?(unitId: number, index: number, value: number): boolean;
+  /** `EXSetUnitMoveType` — the editor's Movement Type bit mask. */
+  setUnitMoveType?(unitId: number, mask: number): void;
+  /** `EXSetUnitCollisionType` — `bit` is an INDEX (the native stores `1 << bit`). */
+  setUnitCollisionType?(unitId: number, bit: number, enable: boolean): void;
   /** UnitAddItem (+ …ToSlotById): give an existing item to a unit — `slot` < 0 = first
    *  free. False if the inventory is full, which is what leaves a UnitAddItemById item
    *  lying at the hero's feet (blizzard.j creates it there first, then adds it). */
@@ -1256,6 +1275,16 @@ export interface EngineHooks {
   specialEffectSubAnim?(id: number, tag: string | null, add: boolean): void;
   /** BlzGetLocalSpecialEffectX/Y/Z — where it stands; all zero for an attached effect. */
   specialEffectPosition?(id: number): { x: number; y: number; z: number } | null;
+  /** The effect's current uniform scale (`EXGetEffectSize`). */
+  specialEffectScale?(id: number): number;
+  /** A NON-UNIFORM scale (`EXEffectMatScale`), since Blz only exposes the uniform one. */
+  setSpecialEffectScaleVector?(id: number, x: number, y: number, z: number): void;
+  /** `EXEffectMatRotate*` — an incremental rotation about a LOCAL axis, in radians. */
+  rotateSpecialEffect?(id: number, axis: "x" | "y" | "z", radians: number): void;
+  /** `EXEffectMatReset` — identity rotation and unit scale. */
+  resetSpecialEffect?(id: number): void;
+  /** `EXSetEffectSpeed` — the model's animation playback rate. */
+  specialEffectTimeScale?(id: number, speed: number): void;
   /** GetLocationZ — "the current surface elevation … This includes the terrain (hills or
    *  water) and walkable destructables" (jassbot). */
   surfaceZ?(x: number, y: number): number;

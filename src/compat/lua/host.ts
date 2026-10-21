@@ -26,6 +26,10 @@ import { damageImpls } from "./japi/damage";
 import { itemImpls } from "./japi/item";
 import { abilityImpls } from "./japi/ability";
 import { unitImpls } from "./japi/unit";
+import { effectImpls } from "./japi/effect";
+import { chatImpls } from "./japi/chat";
+import { buffImpls } from "./japi/buff";
+import { iconImpls } from "./japi/icon";
 import { pushArrayProxy } from "./modules/jarray";
 import { createSettings, LUA_NOREF, type LuaRuntimeSettings } from "./settings";
 
@@ -699,6 +703,10 @@ export function createLuaMapScript(interp: Interpreter, seed: number, options: L
     ...itemImpls(rt),
     ...abilityImpls(rt),
     ...unitImpls(rt),
+    ...effectImpls(rt),
+    ...chatImpls(rt),
+    ...buffImpls(rt),
+    ...iconImpls(rt),
   };
   for (const decl of YD_JAPI) registerJapi(rt, decl, japiImpls[decl.name]);
   // The three `japi_hook` names are existing natives with extended behaviour; `jass.japi`
