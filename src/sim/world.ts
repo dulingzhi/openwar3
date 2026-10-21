@@ -1371,6 +1371,14 @@ export interface DamageBlow {
   damageType: number;
   /** The weapon's sound class as the data spells it ("MetalMediumSlice"; "" for none). */
   weaponSound: string;
+  /** Did a WEAPON swing raise this blow? (`EXGetEventDamageData(2)`.) */
+  isAttack?: boolean;
+  /** Was that swing ranged? (`EXGetEventDamageData(3)`.) */
+  isRanged?: boolean;
+  /** Does armour/the damage table apply? The engine's own `is_physical` split (`…(1)`). */
+  physical?: boolean;
+  /** The weapon-type index when the caller knows it; 0 = unknown (`…(5)`). */
+  weaponType?: number;
 }
 
 export interface EventUnitInfo {
@@ -17441,7 +17449,13 @@ export class SimWorld {
     let attackType = opts.attackType;
     if (this.damageHook) {
       const src = this.units.get(sourceId);
-      blow = { target: eventInfo(target), source: src ? eventInfo(src) : null, amount, attackType, damageType: opts.damageType ?? 0, weaponSound: opts.weaponSound ?? "" };
+      blow = {
+        target: eventInfo(target), source: src ? eventInfo(src) : null, amount, attackType,
+        damageType: opts.damageType ?? 0, weaponSound: opts.weaponSound ?? "",
+        // The native's own `attack` flag says whether this is a weapon swing; `magic` and
+        // `universal` say armour and the table do not apply.
+        isAttack: opts.attack, isRanged: false, physical: !opts.magic && !opts.universal,
+      };
       if (!this.raiseDamage("damaging", blow)) return 0;
       amount = blow.amount;
       attackType = blow.attackType;
@@ -23342,7 +23356,11 @@ export class SimWorld {
     // table below then reads.
     let blow: DamageBlow | null = null;
     if (this.damageHook) {
-      blow = { target: eventInfo(target), source: attacker ? eventInfo(attacker) : null, amount: rawDamage, attackType, damageType: DAMAGE_TYPE_NORMAL, weaponSound };
+      blow = {
+        target: eventInfo(target), source: attacker ? eventInfo(attacker) : null,
+        amount: rawDamage, attackType, damageType: DAMAGE_TYPE_NORMAL, weaponSound,
+        isAttack: true, isRanged: ranged, physical: true,
+      };
       if (!this.raiseDamage("damaging", blow)) return 0;
       rawDamage = blow.amount;
       attackType = blow.attackType;
@@ -23864,7 +23882,11 @@ export class SimWorld {
     let blow = raised;
     if (this.damageHook && !blow) {
       const src = attackerId ? this.units.get(attackerId) : undefined;
-      blow = { target: eventInfo(target), source: src ? eventInfo(src) : null, amount, attackType: AttackType.Spells, damageType: 0, weaponSound };
+      blow = {
+        target: eventInfo(target), source: src ? eventInfo(src) : null, amount,
+        attackType: AttackType.Spells, damageType: 0, weaponSound,
+        isAttack: false, isRanged: false, physical: false,
+      };
       if (!this.raiseDamage("damaging", blow)) return 0;
       amount = blow.amount;
       weaponSound = blow.weaponSound;

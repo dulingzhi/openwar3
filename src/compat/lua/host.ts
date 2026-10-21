@@ -16,7 +16,8 @@ import { open as openJapi } from "./modules/japi";
 import { open as openConsole } from "./modules/console";
 import { open as openLog } from "./modules/log";
 import { YD_JAPI } from "./japi/decl";
-import { registerJapi } from "./japi/registry";
+import { registerJapi, type JapiImpl } from "./japi/registry";
+import { damageImpls } from "./japi/damage";
 import { pushArrayProxy } from "./modules/jarray";
 import { createSettings, LUA_NOREF, type LuaRuntimeSettings } from "./settings";
 
@@ -683,9 +684,11 @@ export function createLuaMapScript(interp: Interpreter, seed: number, options: L
   // JAPI first: every declaration fills nativeParams/nativeReturns, and EXExecuteScript gets
   // the one implementation this layer owns. `jass.common` therefore sees implemented JAPI
   // names through `rt.natives`, exactly as `japi_add` puts them in the JASS table.
-  for (const decl of YD_JAPI) {
-    registerJapi(rt, decl, decl.name === "EXExecuteScript" ? (c, a) => execScript(c, a) : undefined);
-  }
+  const japiImpls: Record<string, JapiImpl> = {
+    EXExecuteScript: (c, a) => execScript(c, a),
+    ...damageImpls(rt),
+  };
+  for (const decl of YD_JAPI) registerJapi(rt, decl, japiImpls[decl.name]);
 
   preloads.set("jass.common", (S) => openCommon(moduleHost, S));
   preloads.set("jass.globals", (S) => openGlobals(moduleHost, S));

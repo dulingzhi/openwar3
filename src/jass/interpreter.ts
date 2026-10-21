@@ -1349,7 +1349,7 @@ export class Interpreter {
    * back when this returns (runtime.damageStack). DAMAGING goes to EVENT_UNIT_DAMAGING /
    * EVENT_PLAYER_UNIT_DAMAGING, DAMAGED to the two classic damage events.
    */
-  fireDamagePhase(phase: "damaging" | "damaged", blow: { target: EventUnitInfoLike; source: EventUnitInfoLike | null; amount: number; attackType: string; damageType: number; weaponSound: string }): void {
+  fireDamagePhase(phase: "damaging" | "damaged", blow: { target: EventUnitInfoLike; source: EventUnitInfoLike | null; amount: number; attackType: string; damageType: number; weaponSound: string; isAttack?: boolean; isRanged?: boolean; physical?: boolean; weaponType?: number }): void {
     const target = this.rt.unitForSim(blow.target as never);
     const source = blow.source ? this.rt.unitForSim(blow.source as never) : JNULL;
     const responses = new Map<string, JassValue>([["TriggerUnit", target], ["EventDamageSource", source], ["EventDamage", jReal(blow.amount)]]);

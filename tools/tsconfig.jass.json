@@ -42,6 +42,7 @@
     "../src/compat/lua/japi/decl.ts",
     "../src/compat/lua/japi/signature.ts",
     "../src/compat/lua/japi/registry.ts",
+    "../src/compat/lua/japi/damage.ts",
     "../src/compat/lua/modules/runtime.ts",
     "../src/compat/lua/modules/debug.ts",
     "../src/compat/lua/modules/hook.ts",
