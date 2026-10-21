@@ -21,6 +21,7 @@ writeFileSync(join(REPO, '.jass-build', 'package.json'), '{"type":"commonjs"}');
 const { buildInterpreter } = require(join(BUILD, 'jass', 'headless.js'));
 const { createLuaMapScript } = require(join(BUILD, 'compat', 'lua', 'host.js'));
 const { jHandle, jInt } = require(join(BUILD, 'jass', 'values.js'));
+const { fireDzInput } = require(join(BUILD, 'game', 'dzInput.js'));
 
 let failures = 0;
 const check = (name, got, want) => {
@@ -155,6 +156,21 @@ function frameChildren()
   J.DzCreateFrameByTagName("FRAME", "c2", ui, "", 0)
   return J.DzFrameGetChildrenCount(ui) >= 2
 end
+keySeen, frameSeen = -1, -1
+function onKey() keySeen = J.DzGetTriggerKey() end
+function onClick() frameSeen = J.DzGetTriggerUIEventFrame() end
+function upd() end
+function registerInput()
+  J.DzTriggerRegisterKeyEvent(nil, 65, 1, false, "onKey")
+  J.DzTriggerRegisterSyncData(nil, "p", false)
+  local f = J.DzCreateFrameByTagName("BUTTON", "b", J.DzGetGameUI(), "", 0)
+  J.DzFrameSetScriptByCode(f, 1, onClick, false)
+  J.DzFrameSetUpdateCallback("upd")
+  J.DzFrameSetModel(f, "m.mdx", 1, 0)
+  J.DzFrameSetAnimate(f, 2, true)
+  return f
+end
+function seen() return keySeen .. ":" .. frameSeen end
 `, "dzapi-p1.lua");
 
 const call = (n, args) => interp.callFunction(n, args ?? []);
@@ -192,6 +208,17 @@ call("tech", [jHandle(pid, "player")]);
 check("tech removal", JSON.stringify(find("tech")), JSON.stringify(["tech", 3, "Rhme", 2]));
 check("frame core flow", call("frames").b, true);
 check("frame children", call("frameChildren").b, true);
+
+const frameId = call("registerInput").n;
+fireDzInput(rt, interp, { kind: "key", key: 65, status: 1, player: 0 });
+check("Dz input trigger", call("seen").s, "65:-1");
+interp.fireFrameEvent(frameId, 1, 0);
+check("Dz frame script", call("seen").s, `65:${frameId}`);
+check("Dz update callback", rt.frameUpdateCallback?.k, "code");
+check("Dz sync registration", rt.dzSyncRegs.length, 1);
+const frameObj = rt.handles.get(frameId);
+check("Dz frame model", frameObj.modelPath, "m.mdx");
+check("Dz frame animate", frameObj.animateIndex, 2);
 
 lua.dispose();
 console.log(failures === 0 ? "\nDzAPI P1: all checks pass" : `\n${failures} failure(s)`);

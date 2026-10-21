@@ -259,5 +259,81 @@ export function frameImpls(rt: Runtime): Record<string, Impl> {
     DzFrameGetCommandBarButton: (ctx, a) =>
       outId(call(ctx, "BlzGetOriginFrame", [jInt(1), jInt(asInt(a[0] ?? JNULL) * 4 + asInt(a[1] ?? JNULL))])),
     DzFrameGetUpperButtonBarButton: (ctx, a) => outId(call(ctx, "BlzGetOriginFrame", [jInt(10), a[0] ?? JNULL])),
+
+    // --- DzFrameSetScript / callbacks -------------------------------------------------
+    // The callback lives in Runtime.frameScripts, keyed by frame handle and FRAMEEVENT
+    // index; Interpreter.fireFrameEvent runs it with the same event responses the Blz
+    // trigger sees, so DzGetTriggerUIEventFrame/Player work inside it.
+    DzFrameSetScript: (_c, a) => setScript(a[0], a[1], asStr(a[2] ?? JNULL) ? { k: "code", fn: asStr(a[2]) } : null),
+    DzFrameSetScriptByCode: (_c, a) => setScript(a[0], a[1], a[2] ?? null),
+    DzFrameSetScriptBlock: (_c, a) => setScript(a[0], a[1], a[2] ?? null),
+    DzFrameSetScriptAsync: (_c, a) => setScript(a[0], a[1], asStr(a[2] ?? JNULL) ? { k: "code", fn: asStr(a[2]) } : null),
+    DzFrameSetScriptByCodeAsync: (_c, a) => setScript(a[0], a[1], a[2] ?? null),
+    DzFrameSetScriptBlockAsync: (_c, a) => setScript(a[0], a[1], a[2] ?? null),
+
+    DzFrameSetUpdateCallback: (_c, a) => {
+      const name = asStr(a[0] ?? JNULL);
+      rt.frameUpdateCallback = name ? { k: "code", fn: name } : null;
+      return JNULL;
+    },
+    DzFrameSetUpdateCallbackByCode: (_c, a) => {
+      const code = a[0];
+      rt.frameUpdateCallback = code && code.k === "code" ? code : null;
+      return JNULL;
+    },
+
+    // --- model frames / animation (stored; the model-frame drawing is the next sub-pack) ---
+    DzFrameSetModel: (_c, a) => {
+      const f = frameAt(rt, a[0]);
+      if (f) {
+        f.modelPath = asStr(a[1] ?? JNULL);
+        f.modelType = asInt(a[2] ?? JNULL);
+        f.modelFlag = asInt(a[3] ?? JNULL);
+        frameModel(rt).revision++;
+      }
+      return JNULL;
+    },
+    DzFrameSetAnimate: (_c, a) => {
+      const f = frameAt(rt, a[0]);
+      if (f) {
+        f.animateIndex = asInt(a[1] ?? JNULL);
+        f.animateFlag = a[2]?.k === "bool" ? (a[2].b ? 1 : 0) : asInt(a[2] ?? JNULL);
+      }
+      return JNULL;
+    },
+    DzFrameSetAnimateByIndex: (_c, a) => {
+      const f = frameAt(rt, a[0]);
+      if (f) { f.animateIndex = asInt(a[1] ?? JNULL); f.animateFlag = asInt(a[2] ?? JNULL); }
+      return JNULL;
+    },
+    DzFrameSetAnimateOffset: (_c, a) => {
+      const f = frameAt(rt, a[0]);
+      if (f) f.animateOffset = asNum(a[1] ?? JNULL);
+      return JNULL;
+    },
+
+    // --- the event a frame script reads ------------------------------------------------
+    DzGetTriggerUIEventFrame: (_c) => {
+      const v = rt.eventResponse("TriggerFrame");
+      return v.k === "handle" ? jInt(v.h) : jInt(0);
+    },
+    DzGetTriggerUIEventPlayer: (_c) => {
+      const v = rt.eventResponse("TriggerPlayer");
+      return v.k === "handle" ? v : JNULL;
+    },
+
+    // --- simple-frame aliases ---------------------------------------------------------
+    DzSimpleFrameShow: (ctx, a) => { call(ctx, "BlzFrameSetVisible", [H(a[0]), a[1] ?? JNULL]); return JNULL; },
+    DzSimpleFrameIsVisible: (ctx, a) => call(ctx, "BlzFrameIsVisible", [H(a[0])]),
+    DzSimpleFrameRemoveFromRegistry: () => JNULL,
   };
+
+  function setScript(frameV: JassValue | undefined, eventV: JassValue | undefined, code: JassValue | null): JassValue {
+    const id = asInt(frameV ?? JNULL), ev = asInt(eventV ?? JNULL);
+    let m = rt.frameScripts.get(id);
+    if (!m) { m = new Map(); rt.frameScripts.set(id, m); }
+    if (code && code.k === "code" && code.fn) m.set(ev, code);
+    else m.delete(ev);
+    return JNULL;
+  }
 }

@@ -1,11 +1,12 @@
 # `dz_w3_plugin` → OpenWar3: porting the DzAPI native layer
 
-**Status (2026-10-21): P0, P1 and P2's CORE are DONE.** P1 covers strings, bits, groups,
+**Status (2026-10-21): P0–P3 are DONE; DSIII reports ZERO missing natives.** P1 covers strings, bits, groups,
 text tags, unit DB, effect extras, selection/minimap and the system/debug subset; P2's core
 covers create/find/destroy, points, size, text, show/enable/alpha/scale/texture, parent/
 children, value/min-max/step, priority, colour/font/alignment and the origin-frame getters.
-`pnpm dzapi:test` pins them. The remaining P2 pieces are frame scripts/update callbacks and
-model frames; P3's input/sync triggers are next. All 394 names are generated into
+`pnpm dzapi:test` pins them. Frame scripts/update callbacks, model/animate storage, the Dz
+input triggers and the sync registration are in too; the only remaining P2 piece is DRAWING a
+model frame (the values are stored). All 394 names are generated into
 [`src/compat/lua/japi/dzapi-decl.ts`](../src/compat/lua/japi/dzapi-decl.ts) by
 `pnpm dzapi:decl` and registered as JAPI aliases, so `jass.japi`, `jass.common` and `_G`
 all reach them with their signatures; an unimplemented one answers its typed default and
@@ -278,17 +279,10 @@ pnpm dsiii:align
 ```
 
 It prints every native the map calls that this engine has not implemented, with call counts.
-The baseline on 2026-10-21 was **33**; after P0+P1+P2-core it is **8**:
-
-```
-DzFrameSetAnimate, DzFrameSetModel, DzFrameSetScript, DzFrameSetUpdateCallback,
-DzTriggerRegisterKeyEvent, DzTriggerRegisterMouseEvent,
-DzTriggerRegisterMouseWheelEvent, DzTriggerRegisterSyncData
-```
-
-The first four are the rest of P2 (frame callbacks/model frames); the last four are P3
-(input/sync triggers). The map has no Lua, so it validates the NATIVE contract, not the Lua
-dialect — the five Lua demo maps (`pnpm lua:demo`) cover that.
+The baseline on 2026-10-21 was **33**; after P0–P3 it is **0**. The remaining visual gap is a
+model frame's DRAWING (the path/animation are stored); the map's config/main and its whole
+DzAPI init surface are clean. The map has no Lua, so it validates the NATIVE contract, not the
+Lua dialect — the five Lua demo maps (`pnpm lua:demo`) cover that.
 
 **A structural rule this alignment produced:** DzAPI must be installed for EVERY map, JASS
 included (`loadMapScript` calls `installDzapi`), not only when a Lua host exists. Before that
@@ -301,7 +295,7 @@ fix the map saw 33 missing natives even though all 394 declarations existed.
 | **P0 — declaration** | generate a 394-row `{name, sig, module, category}` table from the source; register every name as a native with its typed default; optional `rt.japi` aliases | every name compiles, `jass.common` reaches all of them, a call to an unimplemented one answers the typed default and logs once; a table test pins names/signatures | 0.5–1 d |
 | **P1 — pure packs** | strings, bits, groups, text tags, unit DB, effect extras, selection/minimap, debug/log/locale/map path, player-tech, `DzExecuteFunc` | `pnpm dzapi:test` — every pack's hook translation and value | DONE |
 | **P2 — GUI/frames** | the 126 frame functions over `FrameObj`; **CORE DONE** (create/find/destroy, layout, text, show/enable/alpha/scale/texture, parent/children, value, priority, colour/font/alignment, origin-frame getters). Remaining: scripts/update callbacks, model frames, simple-message frames | `pnpm dzapi:test` frame checks; `pnpm dsiii:align` drops the missing list from 33 to the 4 callback/model names | 4–6 d |
-| **P3 — input/sync** | hardware (32), packet (14), build/target preview hooks | a key/mouse trigger registered by a map fires; a sync trigger fires locally; window size/FPS answers | 2–3 d |
+| **P3 — input/sync** | hardware (32), packet (14), build/target preview hooks; **input registrations, frame scripts/update callback and sync registration DONE**; remaining hardware read-outs/build-preview | DSIII 0 missing; `pnpm dzapi:test` drives a key callback and a frame script | 2–3 d |
 | **P4 — world extras** | unit/ability (28), items (5), orders (17), doodads (22), map/env (5), other (16) | per-pack synthetic tests; the JASS demo maps (with an install) exercise the names | 4–6 d |
 | **P5 — platform** | 35 `DzAPI_Map_*` + 4 `RequestExtra*` | documented defaults; optional per-profile local save/load; never blocks a match | 1–2 d |
 | **P6 — tail** | XLSX (9); process-memory/window no-ops documented | XLSX reads a fixture; every remaining name has an explicit answer | 1–2 d |

@@ -94,6 +94,14 @@ export interface FrameObj {
   step?: number;
   disabledText?: string;
   highlightText?: string;
+  /** `DzFrameSetModel` — the model and its type/flag; stored for the model-frame sub-pack. */
+  modelPath?: string;
+  modelType?: number;
+  modelFlag?: number;
+  /** `DzFrameSetAnimate` — the clip index/loop flag/offset. */
+  animateIndex?: number;
+  animateFlag?: number;
+  animateOffset?: number;
 }
 
 /** What the drawing reads: every frame, the map's templates, and two counters that say

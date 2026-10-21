@@ -1764,6 +1764,19 @@ export class Interpreter {
     this.dispatchToRegs(responses, (reg) =>
       reg.kind === "frameEvent" && reg.params[0]?.k === "handle" && reg.params[0].h === frameHandleId &&
       this.rt.enumIndex(reg.params[1] ?? JNULL) === eventIndex);
+    // A DzFrameSetScript callback for this frame/event runs with the SAME event responses the
+    // Blz trigger above saw, so DzGetTriggerUIEventFrame/Player answer what the script expects.
+    const script = this.rt.frameScripts.get(frameHandleId)?.get(eventIndex);
+    if (script && script.k === "code" && script.fn) {
+      this.rt.eventStack.push(responses);
+      try {
+        this.callFunction(script.fn, []);
+      } catch (err) {
+        if (!(err instanceof ThreadAbort)) this.rt.warnOnce(script.fn, `frame script threw: ${(err as Error).message}`);
+      } finally {
+        this.rt.eventStack.pop();
+      }
+    }
   }
 
   /**

@@ -8,6 +8,7 @@ import { unitDbImpls } from "./unitdb";
 import { effectImpls } from "./effect";
 import { selectionImpls } from "./selection";
 import { frameImpls } from "./frame";
+import { inputImpls } from "./input";
 
 // DzAPI P1 registration (docs/dzapi-port.md §4).
 //
@@ -22,7 +23,7 @@ export function installDzapi(rt: Runtime): void {
   for (const decl of DZAPI) registerJapiAlias(rt, decl);
   const impls = {
     ...valueImpls(rt), ...systemImpls(rt), ...textTagImpls(rt), ...unitDbImpls(rt),
-    ...effectImpls(rt), ...selectionImpls(rt), ...frameImpls(rt),
+    ...effectImpls(rt), ...selectionImpls(rt), ...frameImpls(rt), ...inputImpls(rt),
   };
   for (const [name, fn] of Object.entries(impls)) rt.natives.set(name, fn);
 }

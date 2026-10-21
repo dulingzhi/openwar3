@@ -1326,6 +1326,17 @@ export interface EngineHooks {
   setWidgetMinimapIconEnabled?(unitId: number, enabled: boolean): void;
   /** A player slot's COLOUR index (`DzSetEffectTeamColor` takes a player id, not a colour). */
   playerColor?(player: number): number;
+  /** `DzGetWindow/ClientWidth/Height` — the stage's current pixel size. */
+  viewport?(): { width: number; height: number };
+  windowActive?(): boolean;
+  changeWindowSize?(width: number, height: number): boolean;
+  /** `DzIsKeyDown` — the DOM's current key state, by VK code. */
+  isKeyDown?(key: number): boolean;
+  /** The mouse read-outs, in CLIENT pixels plus the terrain point under the cursor. */
+  mouseState?(): {
+    x: number; y: number; relativeX: number; relativeY: number;
+    terrainX: number; terrainY: number; terrainZ: number; overUI: boolean;
+  };
   /** GetLocationZ — "the current surface elevation … This includes the terrain (hills or
    *  water) and walkable destructables" (jassbot). */
   surfaceZ?(x: number, y: number): number;
@@ -1662,6 +1673,21 @@ export class Runtime {
   /** The JAPI registry: names `japi_add` registered beyond common.j. An entry with no `impl`
    *  is DECLARED and not answered — `jass.japi` gives its typed default and says so once. */
   readonly japi = new Map<string, { params: string[]; returns: string; impl?: (ctx: NativeCtx, args: JassValue[]) => JassValue }>();
+  /** `DzTriggerRegister{Key,Mouse,MouseWheel,MouseMove}Event` — local input registrations. */
+  readonly dzInputRegs: Array<{
+    kind: "key" | "mouse" | "wheel" | "move";
+    key: number;
+    status: number;
+    trig: JassValue;
+    sync: boolean;
+    fn: string;
+  }> = [];
+  /** `DzTriggerRegisterSyncData` — prefixes waiting for a network delivery. */
+  readonly dzSyncRegs: Array<{ trig: JassValue; prefix: string; server: boolean }> = [];
+  /** `DzFrameSetScript[ByCode]` — per frame handle, per FRAMEEVENT index, a `code` value. */
+  readonly frameScripts = new Map<number, Map<number, JassValue>>();
+  /** `DzFrameSetUpdateCallback[ByCode]` — one global per-frame callback. */
+  frameUpdateCallback: JassValue | null = null;
   /** Script-function hooks (`jass.code[name] = fn`). Consulted AFTER natives and host
    *  functions and BEFORE the JASS declaration, so a hook wraps the script's own body. The
    *  `real` callback runs that body; it is synchronous (a native cannot yield through it). */

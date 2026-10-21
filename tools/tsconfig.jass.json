@@ -54,6 +54,8 @@
     "../src/compat/lua/japi/dzapi/effect.ts",
     "../src/compat/lua/japi/dzapi/selection.ts",
     "../src/compat/lua/japi/dzapi/frame.ts",
+    "../src/compat/lua/japi/dzapi/input.ts",
+    "../src/game/dzInput.ts",
     "../src/compat/lua/japi/signature.ts",
     "../src/compat/lua/japi/registry.ts",
     "../src/compat/lua/japi/damage.ts",

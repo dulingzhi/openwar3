@@ -871,7 +871,8 @@ data, or asset behaviour, **consult our sources** and cite what you used.
   **DzAPI is installed for EVERY map, JASS included** — `loadMapScript` calls `installDzapi`,
   not only the Lua host — because a JASS map calls `DzFrame*` exactly as a Lua one does.
   `pnpm dsiii:align` is the real-map alignment: it mounts the 1.27 DSIII map, runs
-  `config()`/`main()` and lists the natives still missing (33 → 8 after the core). Writes to a shared row are
+  `config()`/`main()` and lists the natives still missing (33 → 0 after the frame callbacks,
+  input and sync packs). Writes to a shared row are
   PER-MAP CLONES (`ItemRegistry.setCustom` / `AbilityRegistry.setBuffString`), and unit TYPE
   writes answer only slots 10/61 — the raw `CUnitData` slots the corpus proves. The effect
   matrix is an Euler yaw/pitch/roll approximation and collision bits other than 0 are stored

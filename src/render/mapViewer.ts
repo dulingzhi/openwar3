@@ -125,6 +125,7 @@ import { TimerDialogOverlay } from "../ui/timerDialog";
 import { CinematicPanelOverlay } from "../ui/cinematicPanel";
 import { ScriptCamera, type CameraState } from "./scriptCamera";
 import { AutoCamera } from "../game/autoCamera";
+import { fireDzInput } from "../game/dzInput";
 import { BOUNTY_TEXT_STYLE, CombatTextTags, GOLD_TEXT_STYLE, LUMBER_TEXT_STYLE, TextTagOverlay, XP_TEXT_STYLE, type CombatTextStyle, type TextTagContext } from "./textTags";
 import { FdfLibrary } from "../ui/fdf/library";
 import { playFdfClick } from "../ui/fdf/render";
@@ -1515,6 +1516,9 @@ export class MapViewerScene {
   private textTags: TextTagOverlay | null = null; // CreateTextTag, drawn in the world
   /** `DzTextTagSetFont` — the game font file name; the overlay gets a CSS family from it. */
   private textTagFontName = "Arial";
+  /** Dz input read-outs: the client pointer and the VK codes currently held. */
+  private mouseClient = { x: 0, y: 0 };
+  private pressedKeyCodes = new Set<number>();
   // The ENGINE's own floating combat text — a Critical Strike's red "127!", a deny's "!".
   // Drawn by the overlay above but owned here, because no script is involved: it must work in
   // a melee match, where `rt.textTags` stays empty for the whole game.
@@ -7732,6 +7736,20 @@ export class MapViewerScene {
           .map((u) => rt.unitForSim(u));
       },
       playerColor: (p) => this.rts?.playerColor(p) ?? p,
+      viewport: () => ({ width: typeof window !== "undefined" ? window.innerWidth : 0, height: typeof window !== "undefined" ? window.innerHeight : 0 }),
+      windowActive: () => (typeof document === "undefined" ? true : document.visibilityState === "visible"),
+      changeWindowSize: () => false,
+      isKeyDown: (key) => this.pressedKeyCodes.has(key),
+      mouseState: () => {
+        const p = this.rts?.pointerWorld() ?? { x: 0, y: 0 };
+        return {
+          x: this.mouseClient.x, y: this.mouseClient.y,
+          relativeX: this.lastMouse.x, relativeY: this.lastMouse.y,
+          terrainX: p.x, terrainY: p.y,
+          terrainZ: this.rts?.surfaceZ(p.x, p.y) ?? 0,
+          overUI: false,
+        };
+      },
       localLeader: () => {
         const rt = this.mapScript?.interp.rt;
         const sim = this.rts?.simWorld;
@@ -15084,6 +15102,12 @@ export class MapViewerScene {
           this.hideStartLocations();
         }
       }
+      // DzFrameSetUpdateCallback — the map's own per-frame UI update.
+      const frameCb = this.mapScript?.interp.rt.frameUpdateCallback;
+      if (frameCb && frameCb.k === "code" && frameCb.fn) {
+        try { this.mapScript!.interp.callFunction(frameCb.fn, []); }
+        catch (err) { this.mapScript!.interp.rt.warnOnce(frameCb.fn, `update callback threw: ${(err as Error).message}`); }
+      }
       perfLog.begin("fx");
       this.updateSelectionCircles(wdt / 1000);
       this.updateOrderArrows(wdt / 1000);
@@ -17400,6 +17424,13 @@ export class MapViewerScene {
     };
   }
 
+  /** Drive the DzAPI input registrations for one DOM event. */
+  private fireDzInput(kind: "key" | "mouse" | "wheel" | "move", key: number, status: number, delta = 0): void {
+    const eng = this.mapScript;
+    if (!eng) return;
+    fireDzInput(eng.interp.rt, eng.interp, { kind, key, status, delta, player: this.localPlayer });
+  }
+
   private attachControls(): void {
     const c = this.canvas;
     this.bindVoiceKeys();
@@ -17411,6 +17442,8 @@ export class MapViewerScene {
         e.stopPropagation();
         return;
       }
+      this.pressedKeyCodes.add(e.keyCode);
+      this.fireDzInput("key", e.keyCode, 1);
       // ESC during a cinematic SKIPS it — WC3 raises EVENT_PLAYER_END_CINEMATIC for the
       // local player and the map's own skip trigger takes it from there (see
       // Interpreter.firePlayerEvent for the NightElfX01 trigger this exists for).
@@ -17482,6 +17515,8 @@ export class MapViewerScene {
     this.on(window, "keyup", (e: KeyboardEvent) => {
       const k = e.key.toLowerCase();
       this.keys.delete(k);
+      this.pressedKeyCodes.delete(e.keyCode);
+      this.fireDzInput("key", e.keyCode, 0);
       // Letting go of SHIFT ends a shift-queued placement (issue #123 — the original game
       // does this). Holding shift is what keeps the building on the cursor across clicks, so
       // a wall of Farms is "hold shift, click, click, click" and the ghost is put away by
@@ -17508,6 +17543,9 @@ export class MapViewerScene {
     // right-click issues a move order for the selection.
     this.on(c, "pointerdown", (e: PointerEvent) => {
       c.setPointerCapture(e.pointerId);
+      this.mouseClient.x = e.clientX;
+      this.mouseClient.y = e.clientY;
+      this.fireDzInput("mouse", e.button === 0 ? 1 : e.button === 2 ? 2 : e.button === 1 ? 4 : e.button, 1);
       this.sounds?.unlock(); // browsers gate audio until the first user gesture
       // EnableUserControl(false) — a cinematic owns the mouse (7.24). No selecting, no
       // orders, no drag-pan; the shot is the script's to compose.
@@ -17587,6 +17625,7 @@ export class MapViewerScene {
       this.midPanning = false;
     });
     this.on(c, "pointerup", (e: PointerEvent) => {
+      this.fireDzInput("mouse", e.button === 0 ? 1 : e.button === 2 ? 2 : e.button === 1 ? 4 : e.button, 0);
       // Release capture only once ALL buttons are up, so a second button's release
       // can't strand the primary button's pointerup off-target (stuck marquee).
       if (e.buttons === 0) c.releasePointerCapture(e.pointerId);
@@ -17621,6 +17660,9 @@ export class MapViewerScene {
     this.on(c, "pointermove", (e: PointerEvent) => {
       this.lastMouse.x = e.offsetX;
       this.lastMouse.y = e.offsetY;
+      this.mouseClient.x = e.clientX;
+      this.mouseClient.y = e.clientY;
+      this.fireDzInput("move", -1, 0);
       if (this.midPanning) {
         // Self-heal: if the middle button isn't actually held any more, the ending
         // pointerup was lost — drop the pan so it can't stick to the cursor.
@@ -17705,6 +17747,8 @@ export class MapViewerScene {
       "wheel",
       (e: WheelEvent) => {
         e.preventDefault();
+        const dirSign = Math.sign(e.deltaY);
+        if (dirSign) this.fireDzInput("wheel", -1, 0, -dirSign * 120);
         if (!this.userControl) return; // a cinematic owns the zoom too (7.24)
         const dir = Math.sign(e.deltaY); // wheel down (+) = zoom out = a rung further out
         if (!dir) return;
