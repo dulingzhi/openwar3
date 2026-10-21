@@ -53,9 +53,9 @@ import { createSettings, LUA_NOREF, type LuaRuntimeSettings } from "./settings";
 //     looked) and then a callable, which IS cached back into `_G` so the second call is an
 //     ordinary table hit. `__newindex` writes through to a JASS global that already exists,
 //     so the two halves never hold two copies of one variable.
-//  2. **A handle is light userdata.** The same JS object per handle id, so Lua `==` is the
-//     handle identity JASS `==` is, `type()` answers "userdata" as the real client does, and
-//     a handle works as a table key. Nothing about the handle table itself changes.
+//  2. **A handle is a userdata** (docs/lua-engine-port.md §4.4): light userdata by default,
+//     full userdata at YD's level 2. Either way the same box per handle id, so Lua `==` is the
+//     handle identity JASS `==` is, `type()` answers "userdata", and a handle is a table key.
 //  3. **A Lua function handed to the engine becomes a named host function.**
 //     `TriggerAddAction(t, Foo)` hands us a Lua function; it is registered in
 //     `Runtime.hostFunctions` under a name and JASS gets a plain `code` value. Everything
@@ -76,9 +76,10 @@ import { createSettings, LUA_NOREF, type LuaRuntimeSettings } from "./settings";
 // `PolledWait` — are intercepted HERE for that reason rather than routed to blizzard.j.
 //
 // **Safety.** A map is untrusted content the player downloaded. The state opens the standard
-// libraries and then takes away every door out of the sandbox — `io`, `os`, `package`,
-// `require`, `dofile`, `loadfile`, `load`, `debug` — so a map script can compute and call the
-// game API and do nothing else.
+// libraries and then takes away every door out of the sandbox — `io`, `os`, `dofile`,
+// `loadfile`, `load`, `loadstring`, `collectgarbage`, and all of `debug` except `traceback` /
+// `getinfo`. `require` is OURS (require.ts): the `jass.*` preloads and `*.lua` in the map
+// archive, nothing else. A map can compute and call the game API; it cannot read the disk.
 
 /** The floor on a wait: "next tick", never "never". */
 const MIN_WAIT = 0;
