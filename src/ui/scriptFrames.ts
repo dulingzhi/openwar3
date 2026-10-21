@@ -20,6 +20,8 @@ import type { FrameModel } from "../jass/index";
 import type { DataSource } from "../vfs/types";
 import { mountFdfScreen, type FdfScreen } from "./fdf/render";
 import { buildScriptFrameTree, SCRIPT_UI_ROOT, type ScriptFrameTree } from "./scriptFrameTree";
+import { UiModelLayer } from "./uiModelLayer";
+import type { Solver } from "../render/assetSolver";
 
 /** common.j's FRAMEEVENT_CONTROL_CLICK / _MOUSE_ENTER / _MOUSE_LEAVE (ConvertFrameEventType). */
 const CONTROL_CLICK = 1;
@@ -44,6 +46,9 @@ export class ScriptFrameOverlay {
   private textRevision = -1;
   private builtLookRevision = -1;
   private lastBuild = 0;
+  /** SPRITE/MODEL frames drawn as real models (uiModelLayer). Attached by the renderer once
+   *  its viewer exists; inert until then (a map's frames may mount before it does). */
+  private modelLayer: UiModelLayer | null = null;
 
   constructor(
     private container: HTMLElement,
@@ -52,12 +57,24 @@ export class ScriptFrameOverlay {
     private onEvent: (frameHandle: number, eventIndex: number) => void,
   ) {}
 
+  /** Hand the layer the game viewer: sprite frames render into one extra scene on it. */
+  attachModels(
+    viewer: { addScene: () => unknown; load: (path: string, solver: Solver) => Promise<unknown> },
+    solver: Solver,
+    canvas: HTMLCanvasElement,
+  ): void {
+    if (!this.modelLayer) this.modelLayer = new UiModelLayer(this.container, canvas, viewer, solver);
+  }
+
   /** Poll, every frame. `model` null (or holding no frame of the map's) takes it down. */
   update(model: FrameModel | null): void {
     if (!model || !model.frames.size) {
       this.teardown();
       return;
     }
+    // The model frames ride the same poll: their rects move with a rebuild and their
+    // animation offsets move every tick, and neither may cost a rebuild.
+    this.modelLayer?.update(model);
     // A LOOK change (alpha/scale/visible/enable) is patched in CSS — never a rebuild. This
     // comes FIRST: a map's UI animation changes looks 30 times a second, and the structural
     // rebuild below takes hundreds of milliseconds on a 670-frame UI (DSIII's move_ui).
@@ -113,6 +130,7 @@ export class ScriptFrameOverlay {
       });
       this.screen = next;
       this.texts = texts;
+      this.modelLayer?.sync(this.tree?.sprites ?? []);
       model.textChanged.clear();
       model.lookChanged.clear(); // the new screen baked the current looks
       this.builtRevision = revision;
@@ -211,5 +229,7 @@ export class ScriptFrameOverlay {
 
   dispose(): void {
     this.teardown();
+    this.modelLayer?.dispose();
+    this.modelLayer = null;
   }
 }

@@ -819,6 +819,9 @@ interface W3xViewer {
    *  only sound "the map's units are all here" signal (see waitForMapUnits). */
   promiseMap: Map<string, Promise<unknown>>;
   removeScene(scene: Scene): boolean;
+  /** A fresh empty scene with its own camera + viewport — the ui model layer hangs one
+   *  off the game viewer rather than owning a second GL context (ui/uiModelLayer.ts). */
+  addScene(): Scene;
   startFrame(): void;
   render(): void;
 }
@@ -4689,6 +4692,9 @@ export class MapViewerScene {
     // for the local player, as a dialog button's click is.
     this.scriptFrames = new ScriptFrameOverlay(ui, () => this.assetFiles(), skin, (frame, event) =>
       this.mapScript?.interp.fireFrameEvent(frame, event, this.localPlayer));
+    // The map's SPRITE/MODEL frames (DzFrameSetModel — DSIII's bars and loading screen) draw
+    // as real models into one extra scene on the game viewer, not as DOM.
+    this.scriptFrames.attachModels(this.viewer, this.solver, this.canvas);
     this.multiboard = new MultiboardOverlay(ui, this.vfs, skin);
     this.timerDialogs = new TimerDialogOverlay(ui, this.vfs, skin);
     this.cinematic = new CinematicPanelOverlay(ui, this.vfs, skin);

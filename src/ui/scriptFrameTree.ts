@@ -69,6 +69,11 @@ export interface ScriptFrameTree {
   disabled: string[];
   /** The FDF name of the box the 4:3-bound frames are drawn inside, which clips them. */
   clipped: string;
+  /** SPRITE/MODEL frames the script gave a model (`DzFrameSetModel`) — DSIII's hp/exp/skill
+   *  bars and its loading screen. The DOM draws none of them; uiModelLayer.ts renders the
+   *  real MDX into each frame's rect, reading the live FrameObj (its animate offset moves
+   *  every tick, which must never bump the tree's revision) by handle. */
+  sprites: Array<{ name: string; handle: number; modelPath: string }>;
 }
 
 /** Game frames a map may hang its own on to let them leave the 4:3 area (see the header). */
@@ -116,6 +121,7 @@ export function buildScriptFrameTree(model: FrameModel, lib: FdfLibrary): Script
   const out: ScriptFrameTree = {
     root: { type: "FRAME", name: SCRIPT_UI_ROOT, inherits: null, withChildren: false, props: [], children: [] },
     names: new Map(), texts: {}, tooltips: [], listen: [], alpha: {}, disabled: [], clipped: SCRIPT_UI_43,
+    sprites: [],
   };
   out.root.children.push({
     type: "FRAME", name: SCRIPT_UI_43, inherits: null, withChildren: false,
@@ -201,6 +207,12 @@ export function buildScriptFrameTree(model: FrameModel, lib: FdfLibrary): Script
     }
     if (f.alpha < 255) out.alpha[node.name] = Math.max(0, f.alpha) / 255;
     if (!f.enabled) out.disabled.push(node.name);
+    // A model frame keeps its type through the by-type path (no template resolves for the
+    // platform's SPRITE templates — SpriteTemp/hpbar_black are KK built-ins), so the model
+    // hands over by the node's type here; uiModelLayer draws it.
+    if (f.modelPath && (node.type === "SPRITE" || node.type === "MODEL")) {
+      out.sprites.push({ name: node.name, handle: f.handleId, modelPath: f.modelPath.replace(/\//g, "\\") });
+    }
     if (f.tooltip && out.names.has(f.tooltip)) out.tooltips.push({ owner: node.name, tip: out.names.get(f.tooltip)! });
     const events = model.events.get(f.handleId);
     const button = /BUTTON$/.test(node.type);
