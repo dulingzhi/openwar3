@@ -31,6 +31,7 @@ declare module "fengari" {
     lua_pushinteger(L: LuaState, n: number): void;
     lua_pushnumber(L: LuaState, n: number): void;
     lua_pushstring(L: LuaState, s: Uint8Array): void;
+    lua_pushlstring(L: LuaState, s: Uint8Array, len: number): void;
     lua_pushlightuserdata(L: LuaState, v: unknown): void;
     lua_newuserdata(L: LuaState, size: number): unknown;
     lua_tocfunction(L: LuaState, i: number): unknown;

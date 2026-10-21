@@ -15,6 +15,8 @@ import { open as openHook } from "./modules/hook";
 import { open as openJapi } from "./modules/japi";
 import { open as openConsole } from "./modules/console";
 import { open as openLog } from "./modules/log";
+import { open as openSelector } from "./modules/selector";
+import { openStub, openStorm } from "./modules/stubs";
 import { YD_JAPI } from "./japi/decl";
 import { registerJapi, type JapiImpl } from "./japi/registry";
 import { damageImpls } from "./japi/damage";
@@ -702,6 +704,11 @@ export function createLuaMapScript(interp: Interpreter, seed: number, options: L
   preloads.set("jass.japi", (S) => openJapi(moduleHost, S));
   preloads.set("jass.console", (S) => openConsole(moduleHost, S));
   preloads.set("jass.log", (S) => openLog(moduleHost, S));
+  preloads.set("jass.selector", (S) => openSelector(moduleHost, S));
+  preloads.set("jass.bignum", (S) => openStub(moduleHost, S, "jass.bignum"));
+  preloads.set("jass.debugger", (S) => openStub(moduleHost, S, "jass.debugger"));
+  preloads.set("jass.ai", (S) => openStub(moduleHost, S, "jass.ai"));
+  preloads.set("jass.storm", (S) => openStorm(moduleHost, S));
 
   // `require` after the sandbox sweep, so `package` is ours and `load` stays nil. This must
   // happen BEFORE `before` is captured: `require` and the two C helpers are engine names, not
