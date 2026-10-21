@@ -334,6 +334,18 @@ export function frameImpls(rt: Runtime): Record<string, Impl> {
     if (!m) { m = new Map(); rt.frameScripts.set(id, m); }
     if (code && code.k === "code" && code.fn) m.set(ev, code);
     else m.delete(ev);
+    // The drawing wires mouse listeners off `frameModel.events` (BlzTriggerRegisterFrameEvent's
+    // table), so a Dz script must ALSO land there or the click never reaches it at all.
+    // fireFrameEvent runs BOTH the Blz registrations and the Dz script.
+    const fm = frameModel(rt);
+    const f = fm.frames.get(id);
+    if (f) {
+      let set = fm.events.get(id);
+      if (!set) fm.events.set(id, (set = new Set()));
+      if (code && code.k === "code" && code.fn) set.add(ev);
+      else if (!fm.events.get(id)?.size) { /* keep; Blz registrations remain */ }
+      fm.revision++;
+    }
     return JNULL;
   }
 }

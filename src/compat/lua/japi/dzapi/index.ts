@@ -17,13 +17,14 @@ import { inputImpls } from "./input";
 // and switches from its typed-default stub to the real closure automatically; `jass.common`
 // and `_G` use the native directly.
 
-export function installDzapi(rt: Runtime): void {
+export function installDzapi(rt: Runtime, interp?: unknown): void {
   // DzAPI is a NATIVE layer: register the declarations for EVERY map (JASS or Lua), then the
   // packs. `registerJapiAlias` is idempotent, so the Lua host can call this too.
   for (const decl of DZAPI) registerJapiAlias(rt, decl);
   const impls = {
     ...valueImpls(rt), ...systemImpls(rt), ...textTagImpls(rt), ...unitDbImpls(rt),
-    ...effectImpls(rt), ...selectionImpls(rt), ...frameImpls(rt), ...inputImpls(rt),
+    ...effectImpls(rt), ...selectionImpls(rt), ...frameImpls(rt),
+    ...inputImpls(rt, interp as never | undefined),
   };
   for (const [name, fn] of Object.entries(impls)) rt.natives.set(name, fn);
 }

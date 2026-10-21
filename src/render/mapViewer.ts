@@ -17424,6 +17424,24 @@ export class MapViewerScene {
     };
   }
 
+  /** TEMP dev probe: the live frame model, for dsiii bring-up diagnostics. */
+  frameProbe(): unknown {
+    const eng = this.mapScript;
+    if (!eng) return null;
+    const m = frameModel(eng.interp.rt);
+    const ov = this.scriptFrames as unknown as { builtRevision?: number; mounting?: boolean; tree?: { names?: Map<number, string> } } | null;
+    return {
+      overlay: { builtRevision: ov?.builtRevision, mounting: ov?.mounting, treeNames: ov?.tree?.names?.size },
+      modelRevision: m.revision,
+      gameTime: eng.interp.rt.gameTime,
+      frames: [...m.frames.values()].map((f) => ({
+        id: f.handleId, name: f.name, type: f.type, visible: f.visible, alpha: f.alpha,
+        text: f.text.slice(0, 24), parent: f.parent, sized: f.sized, points: f.points.length,
+      })),
+      timers: eng.interp.rt.timers.length,
+    };
+  }
+
   /** Drive the DzAPI input registrations for one DOM event. */
   private fireDzInput(kind: "key" | "mouse" | "wheel" | "move", key: number, status: number, delta = 0): void {
     const eng = this.mapScript;

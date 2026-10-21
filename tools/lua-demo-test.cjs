@@ -76,7 +76,9 @@ const CASES = [
   { map: 'Lua-智能施法.w3x', entries: ['init', 'main'], ok: true },
   // Deliberately out of scope: kkapi's DzLoadToc and the demo plugin's dynamically registered
   // aaa2. A future port of either flips this expectation, on purpose.
-  { map: '界面_ui模型lua测试.w3x', entries: ['test'], ok: false, missing: 'DzLoadToc' },
+  // DzLoadToc now WORKS, so the map gets further and fails on the kkapi-only model-frame
+  // API — still out of scope, still by name.
+  { map: '界面_ui模型lua测试.w3x', entries: ['test'], ok: false, missing: 'DzFrameAddModel' },
   { map: '自动注册native函数.w3x', entries: ['test_native'], ok: false, missing: 'aaa2' },
 ];
 

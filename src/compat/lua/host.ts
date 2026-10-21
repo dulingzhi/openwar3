@@ -716,7 +716,7 @@ export function createLuaMapScript(interp: Interpreter, seed: number, options: L
   // DzAPI (`dz_w3_plugin`) is the OTHER native layer. It is idempotent, so the APP LOADER
   // (`src/jass/index.ts`) installs it for every map, JASS included; this call covers a Lua
   // host created directly by a test/tool.
-  installDzapi(rt);
+  installDzapi(rt, interp);
 
   preloads.set("jass.common", (S) => openCommon(moduleHost, S));
   preloads.set("jass.globals", (S) => openGlobals(moduleHost, S));

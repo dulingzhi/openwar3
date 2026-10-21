@@ -134,7 +134,7 @@ export function loadMapScript(
   });
   // DzAPI is a NATIVE layer (`dz_w3_plugin`), not a Lua feature: a JASS map calls DzFrame*
   // exactly as a Lua one does. Install it for every map before config()/main() run.
-  installDzapi(interp.rt);
+  installDzapi(interp.rt, interp);
   const engine: MapScriptEngine = { interp, setup: interp.rt.setup };
   // The Lua chunk runs LAST, after the JASS libraries are in the runtime, because that is what
   // its globals resolve into — and it publishes its own `config`/`main` as host functions, so

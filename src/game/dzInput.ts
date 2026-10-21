@@ -45,3 +45,31 @@ export function fireDzInput(rt: Runtime, interp: Interpreter, ev: DzInputEvent):
     }
   }
 }
+
+/** `DzSyncData` — the original sends a packet through WC3's lockstep command stream, which
+ *  loops back to EVERY player INCLUDING the sender (`DoCNetCommandTeamChangeAlliance` →
+ *  `DispatchSyncData` → `TriggerExecute`; war3japi_packet.cpp:78-90). So the local
+ *  dispatch here is not an approximation: a single-player match is the one-player case of
+ *  the same echo. */
+export function dispatchDzSync(rt: Runtime, interp: Interpreter, prefix: string, data: string, server: boolean, player: number): void {
+  if (!rt.dzSyncRegs.length) return;
+  for (const reg of [...rt.dzSyncRegs]) {
+    if (reg.prefix !== prefix) continue;
+    // The source's match: a `server` registration only hears `server` packets.
+    if (reg.server && !server) continue;
+    const responses = new Map<string, JassValue>([
+      ["DzSyncData", { k: "string", s: data }],
+      ["DzSyncPlayer", rt.playerHandle(player)],
+      ["DzSyncPrefix", { k: "string", s: prefix }],
+      ["TriggerPlayer", rt.playerHandle(player)],
+    ]);
+    rt.eventStack.push(responses);
+    try {
+      interp.callFunction("TriggerExecute", [reg.trig]);
+    } catch (err) {
+      rt.warnOnce(`sync:${prefix}`, `sync trigger threw: ${(err as Error).message}`);
+    } finally {
+      rt.eventStack.pop();
+    }
+  }
+}

@@ -39,6 +39,15 @@ const POINTS = ["TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOM
 /** The renderer's default text height, for a TEXT the script made by type (see the header). */
 const DEFAULT_TEXT_HEIGHT = 0.013;
 
+/** The child name a button's `ButtonText` prop names, or null. */
+const labelNameOf = (node: FdfFrame): string | null => {
+  const p = node.props.find((q) => q.key === "ButtonText");
+  return p && p.args[0]?.s ? p.args[0].s : null;
+};
+
+/** The button family (render.ts has the same set) — a by-type one gets a synthesized label. */
+const BUTTON_TYPES = new Set(["GLUETEXTBUTTON", "GLUEBUTTON", "TEXTBUTTON", "BUTTON", "GLUECHECKBOX"]);
+
 export const SCRIPT_UI_ROOT = "__ScriptUIRoot";
 /** The 0.8 × 0.6 box an absolute point is measured in, centred on the screen. */
 export const SCRIPT_UI_43 = "__ScriptUI43";
@@ -160,7 +169,13 @@ export function buildScriptFrameTree(model: FrameModel, lib: FdfLibrary): Script
       if (!rel) continue; // anchored to a frame that is not drawn (or is the game's own)
       node.props.push({ key: "SetPoint", args: [word(mine), str(rel), word(POINTS[p.relativePoint] ?? mine), num(p.x * s), num(p.y * s)] });
     }
-    if (f.textSet) out.texts[node.name] = f.text;
+    if (f.textSet) {
+      // A BUTTON's text lives in the child its `ButtonText` prop names — the engine writes
+      // BlzFrameSetText into that child, and painting it on the button itself draws nothing
+      // (a button div has no text span of its own).
+      const label = node.children.find((c) => c.name && c.name === labelNameOf(node));
+      out.texts[label ? label.name : node.name] = f.text;
+    }
     // A SIMPLE frame's picture is a `Texture` child, and its image is that block's `File`.
     if (f.textureSet && node.type === "TEXTURE") setProp(node, "File", [str(f.texture.replace(/\//g, "\\"))]);
     if (f.textureSet && node.type === "BACKDROP") {
@@ -219,12 +234,40 @@ export function buildScriptFrameTree(model: FrameModel, lib: FdfLibrary): Script
       apply(node, f, false);
     } else {
       const base = f.inherits ? lib.resolveRoot(f.inherits) : undefined;
-      node = {
-        type: f.type || base?.type || "FRAME", name: out.names.get(f.handleId)!, inherits: null, withChildren: false,
-        props: base ? base.props.map((p) => ({ key: p.key, args: p.args.slice() })) : [], children: [],
-      };
-      if (base) scaleNode(node, scaleOf(f));
-      apply(node, f, !base);
+      if (base) {
+        // The by-type path used to copy the template's PROPS and drop its CHILDREN — which
+        // emptied every button: `ButtonText` names a child, and no child meant no label. The
+        // engine's own inheritance (DzCreateFrameByTagName with a template, war3japi_gui.cpp
+        // BASEFRAMEHASHNODE__Inherit) takes the whole subtree, so clone it the stamped path
+        // does and lay the script's changes over.
+        node = cloneNamespaced(base, `__${f.handleId}`);
+        node.name = out.names.get(f.handleId)!;
+        scaleNode(node, scaleOf(f));
+        apply(node, f, false);
+      } else {
+        node = {
+          type: f.type || "FRAME", name: out.names.get(f.handleId)!, inherits: null, withChildren: false,
+          props: [], children: [],
+        };
+        apply(node, f, true);
+        // A BUTTON made BY TYPE with no template has nothing naming its label — and the
+        // renderer draws a button's text from the child the `ButtonText` prop points at. The
+        // game's own templates (ScriptDialogButtonTemplate and friends) always define one;
+        // synthesize the standard label the template would have written.
+        const hasProp = (k: string): boolean => node.props.some((q) => q.key === k);
+        if (BUTTON_TYPES.has(node.type) && !hasProp("ButtonText")) {
+          const label = `${node.name}__label`;
+          node.props.push({ key: "ButtonText", args: [str(label)] });
+          node.children.push({
+            type: "TEXT", name: label, inherits: null, withChildren: false,
+            props: [
+              { key: "SetAllPoints", args: [] },
+              { key: "FrameFont", args: [str("MasterFont"), num(DEFAULT_TEXT_HEIGHT), str("")] },
+            ],
+            children: [],
+          });
+        }
+      }
     }
     for (const c of scriptChildren(f)) {
       const built = build(c);

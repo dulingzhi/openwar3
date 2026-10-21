@@ -1,4 +1,6 @@
 import type { NativeCtx, Runtime } from "../../../../jass/runtime";
+import { dispatchDzSync } from "../../../../game/dzInput";
+import type { Interpreter } from "../../../../jass/interpreter";
 import { asInt, asStr, jBool, jInt, jReal, jStr, JNULL, type JassValue } from "../../../../jass/values";
 
 // DzAPI P3: input, window and sync registrations (docs/dzapi-port.md §3.9-3.10;
@@ -16,7 +18,7 @@ type Impl = (ctx: NativeCtx, args: JassValue[]) => JassValue;
 const trig = (v: JassValue | undefined): JassValue => v ?? JNULL;
 const codeName = (v: JassValue | undefined): string => (v?.k === "code" ? v.fn : "");
 
-export function inputImpls(rt: Runtime): Record<string, Impl> {
+export function inputImpls(rt: Runtime, interp?: Interpreter): Record<string, Impl> {
   const register = (
     kind: "key" | "mouse" | "wheel" | "move" | "resize",
     a: JassValue[], fnAt: number, syncAt: number,
@@ -100,9 +102,21 @@ export function inputImpls(rt: Runtime): Record<string, Impl> {
       rt.dzSyncRegs.push({ trig: trig(a[0]), prefix: asStr(a[1] ?? JNULL), server: a[2]?.k === "bool" ? a[2].b : false });
       return JNULL;
     },
-    DzSyncData: () => JNULL,           // peers only; no peers in a single-player match
-    DzSyncDataImmediately: () => JNULL,
-    DzSyncBuffer: () => JNULL,
+    // The original's packet loops back to the sender through the lockstep stream (see
+    // game/dzInput.dispatchDzSync), so these FIRE the registered triggers locally — the
+    // one-player case of the same echo, not an approximation.
+    DzSyncData: (_c, a) => {
+      if (interp) dispatchDzSync(rt, interp, asStr(a[0] ?? JNULL), asStr(a[1] ?? JNULL), false, rt.localPlayer);
+      return JNULL;
+    },
+    DzSyncDataImmediately: (_c, a) => {
+      if (interp) dispatchDzSync(rt, interp, asStr(a[0] ?? JNULL), asStr(a[1] ?? JNULL), false, rt.localPlayer);
+      return JNULL;
+    },
+    DzSyncBuffer: (_c, a) => {
+      if (interp) dispatchDzSync(rt, interp, asStr(a[0] ?? JNULL), asStr(a[1] ?? JNULL), false, rt.localPlayer);
+      return JNULL;
+    },
     DzGetTriggerSyncData: () => {
       const v = rt.eventResponse("DzSyncData");
       return v.k === "string" ? v : jStr("");
