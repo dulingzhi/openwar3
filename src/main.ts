@@ -1318,7 +1318,6 @@ if (import.meta.env.DEV && new URLSearchParams(location.search).has("dev")) {
   mainMenu: () => glue.screen,
   menuScene: () => menuScene,
   mapScene: () => mapScene, // the live match, for the two-client LAN harness's eval probes
-  frameProbe: () => mapScene?.frameProbe?.() ?? null,
   // The score screen again, over whatever is up, on the last table (or one handed in) — a probe
   // for laying it out without finishing a match each time. Resolves on its OK.
   scoreScreen: (table?: ScoreTable) => {

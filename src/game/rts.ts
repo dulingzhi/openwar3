@@ -47,7 +47,7 @@ import type { FogArea, FogModifier } from "./fog";
 import { AllianceTable, AllianceType } from "../sim/alliances";
 import type { HeightSampler, FootprintMaxSampler } from "./heightmap";
 import { modelPickVolumes, rayVolume, rebaseVolumes, type CollisionShapeNode, type PickVolume } from "../render/modelCollision";
-import { autoArmed, type UnitRegistry, type UnitDef } from "../data/units";
+import { autoArmed, unknownUnitDef, type UnitRegistry, type UnitDef } from "../data/units";
 import { ArmorType, AttackType, isNeutralSlot, MoveType, neutralSlot, PlayerSlot, PrimaryAttribute } from "../data/enums";
 import { MELEE, dataNum, gameNum, xpToReachLevel } from "../data/gameplayConstants";
 import { type AbilityRegistry, type AbilityDef, type AbilityLevel } from "../data/abilities";
@@ -2668,8 +2668,15 @@ export class RtsController {
   }
 
   createScriptUnit(player: number, typeId: string, x: number, y: number, facingDeg: number, teamOf: (p: number) => number): number {
-    const def = this.registry.get(typeId);
-    if (!def) return -1;
+    let def = this.registry.get(typeId);
+    if (!def) {
+      // An unknown rawcode is a BLANK BODY, not a refusal (DSIII: a protected map whose object
+      // data is under no standard name still CreateUnits its heroes). The unit exists — with
+      // no model and no weapons — so the script's DzSetUnitModel/DzSetUnitTexture calls have
+      // something to land on; nothing about the sim's own rules changes.
+      def = unknownUnitDef(typeId);
+      this.registry.setCustom(typeId, def);
+    }
     if (typeId === GOLD_MINE_ID) return this.createScriptMine(def, x, y);
     const grid = this.sim.grid;
     const fp = def.isBuilding && def.pathTex ? this.footprintOf(def.pathTex) : null;
@@ -8109,6 +8116,12 @@ export class RtsController {
   }
 
   /** The world point under the last pointer position (jass.message's `mouse()`). */
+  /** The unit under the cursor, as a SIM id (0 = none) — `DzGetUnitUnderMouse`. The pick
+   *  needs CSS-pixel coordinates; the renderer hands those over with the world point. */
+  unitUnderCursor(cssX: number, cssY: number): number {
+    return this.pickAt(cssX, cssY) ?? 0;
+  }
+
   pointerWorld(): { x: number; y: number } {
     const g = this.groundPoint(this.lastPointer.x, this.lastPointer.y);
     return g ? { x: g[0], y: g[1] } : { x: 0, y: 0 };

@@ -75,6 +75,53 @@ export function registerItemNatives(rt: Runtime): void {
     return jHandle(it.handleId, "item");
   };
   def(rt, "CreateItem", (c, a) => createItem(c, asInt(a[0]), asNum(a[1]), asNum(a[2])));
+
+  // --- item pools (common.j's random-drop family; declared since 1.24) ------------------
+  // A pool is a weighted list of item TYPES; PlaceRandomItem draws one and drops it at a
+  // point. A weight of 0 removes the entry from the draw entirely (WC3's documented rule).
+  interface ItemPoolObj {
+    handleId: number;
+    entries: Array<{ id: number; weight: number }>;
+  }
+  const pool = (c: NativeCtx, v: JassValue | undefined): ItemPoolObj | undefined => c.rt.data<ItemPoolObj>(v ?? JNULL);
+  def(rt, "CreateItemPool", (c) => {
+    const p: ItemPoolObj = { handleId: 0, entries: [] };
+    p.handleId = c.rt.handles.alloc(p);
+    return jHandle(p.handleId, "itempool");
+  });
+  def(rt, "DestroyItemPool", (c, a) => {
+    const p = pool(c, a[0]);
+    if (p) c.rt.handles.free(p.handleId);
+    return JNULL;
+  });
+  def(rt, "ItemPoolAddItemType", (c, a) => {
+    const p = pool(c, a[0]);
+    if (!p) return JNULL;
+    const id = asInt(a[1]), weight = asNum(a[2]);
+    p.entries = p.entries.filter((e) => e.id !== id);
+    p.entries.push({ id, weight });
+    return JNULL;
+  });
+  def(rt, "ItemPoolRemoveItemType", (c, a) => {
+    const p = pool(c, a[0]);
+    if (p) p.entries = p.entries.filter((e) => e.id !== asInt(a[1]));
+    return JNULL;
+  });
+  def(rt, "PlaceRandomItem", (c, a) => {
+    const p = pool(c, a[0]);
+    if (!p || !p.entries.length) return JNULL;
+    const live = p.entries.filter((e) => e.weight > 0);
+    if (!live.length) return JNULL;
+    let total = 0;
+    for (const e of live) total += e.weight;
+    let roll = c.rt.random() * total;
+    let picked = live[live.length - 1]!;
+    for (const e of live) {
+      roll -= e.weight;
+      if (roll <= 0) { picked = e; break; }
+    }
+    return createItem(c, picked.id, asNum(a[1]), asNum(a[2]));
+  });
   def(rt, "RemoveItem", (c, a) => {
     const it = item(c, a[0]);
     if (it && it.simId >= 0) c.rt.hooks?.removeItem?.(it.simId);

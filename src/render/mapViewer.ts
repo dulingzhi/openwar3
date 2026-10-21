@@ -7750,6 +7750,35 @@ export class MapViewerScene {
           overUI: false,
         };
       },
+      unitUnderMouse: () => {
+        const rt = this.mapScript?.interp.rt;
+        const rts = this.rts;
+        if (!rt || !rts) return { k: "null" };
+        const sim = rts.unitUnderCursor(this.lastMouse.x, this.lastMouse.y);
+        const u = sim ? rts.simView.units.get(sim) : undefined;
+        return u ? rt.unitForSim(u) : { k: "null" };
+      },
+      mouseFocusFrame: () => {
+        // The script frame under the cursor: the deepest frame element at the pointer.
+        const el = document.elementFromPoint(this.mouseClient.x, this.mouseClient.y);
+        const frame = el?.closest("[data-frame]");
+        if (!frame) return 0;
+        const name = (frame as HTMLElement).dataset.frame ?? "";
+        // Reverse the tree's name map: name → handleId.
+        const eng = this.mapScript;
+        if (!eng) return 0;
+        const tree = (this.scriptFrames as unknown as { tree?: { names?: Map<number, string> } } | null)?.tree;
+        if (!tree?.names) return 0;
+        for (const [h, n] of tree.names) if (n === name) return h;
+        return 0;
+      },
+      setUnitTexture: (unitId, path, texId) => {
+        const inst = this.rts?.unitInstance(unitId) as unknown as { setTexture?: (i: number, t: unknown) => void } | undefined;
+        inst?.setTexture?.(texId, path);
+      },
+      createItemPool: () => 0,
+      destroyItemPool: () => undefined,
+      itemPoolAdd: () => undefined,
       localLeader: () => {
         const rt = this.mapScript?.interp.rt;
         const sim = this.rts?.simWorld;
@@ -17421,24 +17450,6 @@ export class MapViewerScene {
         else interp.callFunction("IssueTargetOrder", [u, jStr(name), jHandle(target ?? 0, "unit")]);
         return true;
       },
-    };
-  }
-
-  /** TEMP dev probe: the live frame model, for dsiii bring-up diagnostics. */
-  frameProbe(): unknown {
-    const eng = this.mapScript;
-    if (!eng) return null;
-    const m = frameModel(eng.interp.rt);
-    const ov = this.scriptFrames as unknown as { builtRevision?: number; mounting?: boolean; tree?: { names?: Map<number, string> } } | null;
-    return {
-      overlay: { builtRevision: ov?.builtRevision, mounting: ov?.mounting, treeNames: ov?.tree?.names?.size },
-      modelRevision: m.revision,
-      gameTime: eng.interp.rt.gameTime,
-      frames: [...m.frames.values()].map((f) => ({
-        id: f.handleId, name: f.name, type: f.type, visible: f.visible, alpha: f.alpha,
-        text: f.text.slice(0, 24), parent: f.parent, sized: f.sized, points: f.points.length,
-      })),
-      timers: eng.interp.rt.timers.length,
     };
   }
 

@@ -1,6 +1,6 @@
 # `dz_w3_plugin` → OpenWar3: porting the DzAPI native layer
 
-**Status (2026-10-21): P0–P3 are DONE; DSIII reports ZERO missing natives.** P1 covers strings, bits, groups,
+**Status (2026-10-21): P0–P3 DONE; DSIII plays: zero missing natives, the hero SPAWNS.** P1 covers strings, bits, groups,
 text tags, unit DB, effect extras, selection/minimap and the system/debug subset; P2's core
 covers create/find/destroy, points, size, text, show/enable/alpha/scale/texture, parent/
 children, value/min-max/step, priority, colour/font/alignment and the origin-frame getters.
@@ -279,10 +279,20 @@ pnpm dsiii:align
 ```
 
 It prints every native the map calls that this engine has not implemented, with call counts.
-The baseline on 2026-10-21 was **33**; after P0–P3 it is **0**. The remaining visual gap is a
-model frame's DRAWING (the path/animation are stored); the map's config/main and its whole
-DzAPI init surface are clean. The map has no Lua, so it validates the NATIVE contract, not the
-Lua dialect — the five Lua demo maps (`pnpm lua:demo`) cover that.
+The baseline on 2026-10-21 was **33**; after P0–P3 it is **0**. In the BROWSER the map now
+plays: boot → press-any-key → init chain → login screen → 新建角色 click → gender → GAME
+START with the quest UI, skill bar and 110/110 hero — and the hero SPAWNS (sim units exist;
+`unitCount`'s 0 is its RENDERED-entry census, and the hero is a blank body until its model
+lands). The map's object data is under NO standard name (a protected map), so its hero types
+are UNKNOWN to every table — `createScriptUnit` now answers an unknown rawcode with a blank
+body (`unknownUnitDef`), which is the engine's own answer, rather than refusing.
+
+Two things the bring-up added beyond natives:
+* **Look patching** (frames.ts `lookRevision` + scriptFrames `patchLooks`): a map's UI
+  animation changes alpha/scale 30×/s; each change used to rebuild the whole mounted FDF
+  screen (670 frames + texture decode). Login-screen fps: **3 → 41**.
+* **DzSyncData loops back locally** (the original's lockstep packet echoes to the sender),
+  which is what unblocks the map's init chain at all.
 
 **A structural rule this alignment produced:** DzAPI must be installed for EVERY map, JASS
 included (`loadMapScript` calls `installDzapi`), not only when a Lua host exists. Before that

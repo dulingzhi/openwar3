@@ -115,6 +115,12 @@ export interface FrameModel {
   sources: Array<{ id: string; text: string }>;
   /** Bumped by everything that changes what is drawn or where. */
   revision: number;
+  /** Bumped by a LOOK change alone (alpha, scale, visible, enable) — the drawing patches
+   *  those in CSS without rebuilding the tree. A map's UI animation (move_ui: alpha+scale
+   *  per timer tick, 30/s) would otherwise rebuild the whole mounted screen per tick. */
+  lookRevision: number;
+  /** The frames whose look changed since the drawing last patched them. */
+  lookChanged: Set<number>;
   /** Bumped by a text change alone — the drawing patches those in place. */
   textRevision: number;
   /** Which frames' text changed since the drawing last took the set. */
@@ -130,7 +136,8 @@ export function frameModel(rt: Runtime): FrameModel {
   let m = models.get(rt);
   if (!m) {
     m = {
-      frames: new Map(), lib: new FdfLibrary(NO_FILES), sources: [], revision: 0, textRevision: 0,
+      frames: new Map(), lib: new FdfLibrary(NO_FILES), sources: [], revision: 0,
+      lookRevision: 0, lookChanged: new Set(), textRevision: 0,
       textChanged: new Set(), events: new Map(),
     };
     models.set(rt, m);
@@ -308,14 +315,29 @@ export function registerFrameNatives(rt: Runtime): void {
       return JNULL;
     });
   };
-  set("BlzFrameSetVisible", (f, a, c) => {
+  /** A LOOK change (alpha/scale/visible/enable) bumps its own counter and names its frame, so
+   *  the drawing can patch it in CSS. A structural bump stays off this path: an animation
+   *  that runs 30 ticks a second must never rebuild the mounted screen. */
+  const lookSet = (name: string, apply: (f: FrameObj, a: JassValue[], c: NativeCtx) => void): void => {
+    def(rt, name, (c, a) => {
+      const f = frame(c, a[0]);
+      if (f) {
+        apply(f, a, c);
+        const m = model(c);
+        m.lookRevision++;
+        m.lookChanged.add(f.handleId);
+      }
+      return JNULL;
+    });
+  };
+  lookSet("BlzFrameSetVisible", (f, a, c) => {
     f.visible = truthy(a[1]);
     // The one game frame whose visibility is ours to draw: the black behind the bottom console.
     if (f.origin && f.name === "ConsoleUIBackdrop") c.rt.hooks?.setConsoleBackdropVisible?.(f.visible);
   });
-  set("BlzFrameSetEnable", (f, a) => { f.enabled = truthy(a[1]); });
-  set("BlzFrameSetAlpha", (f, a) => { f.alpha = asInt(a[1]); });
-  set("BlzFrameSetScale", (f, a) => { f.scale = asNum(a[1]); });
+  lookSet("BlzFrameSetEnable", (f, a) => { f.enabled = truthy(a[1]); });
+  lookSet("BlzFrameSetAlpha", (f, a) => { f.alpha = asInt(a[1]); });
+  lookSet("BlzFrameSetScale", (f, a) => { f.scale = asNum(a[1]); });
   set("BlzFrameSetTexture", (f, a) => { f.texture = asStr(a[1]); f.textureSet = true; });
   set("BlzFrameSetValue", (f, a) => { f.value = asNum(a[1]); });
   set("BlzFrameSetSize", (f, a) => { f.width = asNum(a[1]); f.height = asNum(a[2]); f.sized = true; });

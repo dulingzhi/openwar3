@@ -1227,3 +1227,21 @@ export function destructibleUnitDef(d: {
     classification: [`targ:${d.targType}`],
   };
 }
+
+/**
+ * A unit type NO table knows (DSIII's heroes come out of a PROTECTED map whose object data
+ * is not in the archive under any standard name, and CreateUnit is still called on them).
+ * The engine's own answer is to create the unit anyway — an unknown rawcode is a body with
+ * no model and no weapons, not a refusal — so the script's DzSetUnitTexture/DzSetUnitModel
+ * calls have something to land on. Every field is the blank the destructible path already
+ * spelled out; only the id differs.
+ */
+export function unknownUnitDef(typeId: string): UnitDef {
+  const d = destructibleUnitDef({ typeId: `unk:${typeId}`, name: typeId, maxLife: 1, radius: 0, selCircle: 72, armorSound: "", targType: "ground", portraitModel: "" });
+  // A REAL unit, not a destructible: it moves, it is selected, it is the map's hero.
+  d.typeName = "";
+  d.moveType = MoveType.Foot;
+  d.targType = "ground";
+  d.speed = 0;
+  return d;
+}

@@ -42,6 +42,7 @@ export class ScriptFrameOverlay {
   private mounting = false;
   private builtRevision = -1;
   private textRevision = -1;
+  private builtLookRevision = -1;
   private lastBuild = 0;
 
   constructor(
@@ -56,6 +57,13 @@ export class ScriptFrameOverlay {
     if (!model || !model.frames.size) {
       this.teardown();
       return;
+    }
+    // A LOOK change (alpha/scale/visible/enable) is patched in CSS — never a rebuild. This
+    // comes FIRST: a map's UI animation changes looks 30 times a second, and the structural
+    // rebuild below takes hundreds of milliseconds on a 670-frame UI (DSIII's move_ui).
+    if (model.lookRevision !== this.builtLookRevision && this.screen && this.tree) {
+      this.builtLookRevision = model.lookRevision;
+      this.patchLooks(model);
     }
     if (model.revision !== this.builtRevision) {
       const now = performance.now();
@@ -106,13 +114,16 @@ export class ScriptFrameOverlay {
       this.screen = next;
       this.texts = texts;
       model.textChanged.clear();
+      model.lookChanged.clear(); // the new screen baked the current looks
       this.builtRevision = revision;
       this.textRevision = textRevision;
+      this.builtLookRevision = model.lookRevision;
       prev?.dispose(); // swap only once the new one is up, so the panel never blinks
     } catch (err) {
       console.warn("[script frames] could not mount the map's frames:", err);
       this.screen = null;
       this.builtRevision = model.revision; // do not retry a broken tree every frame
+      this.builtLookRevision = model.lookRevision;
     } finally {
       this.mounting = false;
     }
@@ -156,6 +167,38 @@ export class ScriptFrameOverlay {
         });
       }
     }
+  }
+
+  /** Patch the frames whose LOOK changed (see frames.ts lookSet) into the mounted screen. */
+  private patchLooks(model: FrameModel): void {
+    const screen = this.screen;
+    const names = this.tree?.names ?? new Map<number, string>();
+    for (const h of model.lookChanged) {
+      const f = model.frames.get(h);
+      const name = names.get(h);
+      if (!f || !screen) continue;
+      if (!name) {
+        // Not in the tree — it may have become VISIBLE (names are computed at build time from
+        // the shown() walk), which is a structural change after all.
+        if (f.visible) { model.revision++; this.builtLookRevision = -1; }
+        continue;
+      }
+      const el = screen.frame(name);
+      if (!el) continue;
+      el.style.opacity = f.alpha < 255 ? String(Math.max(0, f.alpha) / 255) : "";
+      el.style.display = f.visible ? "" : "none";
+      screen.setEnabled(name, f.enabled);
+      // Scale: the tree BAKES the scale into layout, so a live change is approximated with a
+      // CSS transform on the element — visually the same as the engine scaling the frame and
+      // its children, and the next structural rebuild bakes the exact value back in.
+      if (f.scale !== 1) {
+        el.style.transformOrigin = "top left";
+        el.style.transform = `scale(${f.scale})`;
+      } else {
+        el.style.transform = "";
+      }
+    }
+    model.lookChanged.clear();
   }
 
   private teardown(): void {

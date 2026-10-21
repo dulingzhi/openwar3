@@ -302,6 +302,52 @@ export function registerWorldNatives(rt: Runtime): void {
     return JNULL;
   });
 
+  // --- unit pools (common.j's random-spawn family; declared since 1.24) -----------------
+  interface UnitPoolObj {
+    handleId: number;
+    entries: Array<{ id: number; weight: number }>;
+  }
+  const upool = (c: NativeCtx, v: JassValue | undefined): UnitPoolObj | undefined => c.rt.data<UnitPoolObj>(v ?? JNULL);
+  def(rt, "CreateUnitPool", (c) => {
+    const p: UnitPoolObj = { handleId: 0, entries: [] };
+    p.handleId = c.rt.handles.alloc(p);
+    return jHandle(p.handleId, "unitpool");
+  });
+  def(rt, "DestroyUnitPool", (c, a) => {
+    const p = upool(c, a[0]);
+    if (p) c.rt.handles.free(p.handleId);
+    return JNULL;
+  });
+  def(rt, "UnitPoolAddUnitType", (c, a) => {
+    const p = upool(c, a[0]);
+    if (!p) return JNULL;
+    const id = asInt(a[1]), weight = asNum(a[2]);
+    p.entries = p.entries.filter((e) => e.id !== id);
+    p.entries.push({ id, weight });
+    return JNULL;
+  });
+  def(rt, "UnitPoolRemoveUnitType", (c, a) => {
+    const p = upool(c, a[0]);
+    if (p) p.entries = p.entries.filter((e) => e.id !== asInt(a[1]));
+    return JNULL;
+  });
+  def(rt, "PlaceRandomUnit", (c, a) => {
+    const p = upool(c, a[0]);
+    if (!p) return JNULL;
+    const live = p.entries.filter((e) => e.weight > 0);
+    if (!live.length) return JNULL;
+    let total = 0;
+    for (const e of live) total += e.weight;
+    let roll = c.rt.random() * total;
+    let picked = live[live.length - 1]!;
+    for (const e of live) {
+      roll -= e.weight;
+      if (roll <= 0) { picked = e; break; }
+    }
+    // The same door CreateUnit takes, so a pool-spawned body is a real body.
+    return byName(c, jStr(intToRawcode(picked.id)), a[1] ?? JNULL, "point", asNum(a[2] ?? JNULL), asNum(a[3] ?? JNULL), JNULL);
+  });
+
   // --- orders (7.14): a trigger tells a unit what to do; the sim carries it out ---
   // Route an order (generic id + target kind) through the bridge to the sim's issue*
   // commands. IssueXOrder returns true when the order took. A no-sim / unknown unit → false.
@@ -444,6 +490,13 @@ export function registerWorldNatives(rt: Runtime): void {
     return JNULL;
   };
   def(rt, "SetUnitAnimation", (c, a) => anim(c, a[0], a[1].k === "string" ? a[1].s : ""));
+  // SetUnitAnimationByIndex — a clip by its MODEL's sequence index (common.j 1.24+). The
+  // engine side takes names, so the index is spelled as a string and the renderer treats a
+  // numeric name as a sequence number (rts.setUnitAnimation's own convention).
+  def(rt, "SetUnitAnimationByIndex", (c, a) => anim(c, a[0], String(asInt(a[1] ?? JNULL))));
+  // SetDoodadAnimationRect — animate every doodad of a type in a rect. Doodads here are
+  // static placements (no per-instance animation state); the call answers and says nothing.
+  def(rt, "SetDoodadAnimationRect", () => JNULL);
   def(rt, "QueueUnitAnimation", (c, a) => anim(c, a[0], a[1].k === "string" ? a[1].s : ""));
   def(rt, "ResetUnitAnimation", (c, a) => anim(c, a[0], ""));
   // SetUnitExploded (common.j 1608) — the unit bursts into its "Art - Special" when it dies and

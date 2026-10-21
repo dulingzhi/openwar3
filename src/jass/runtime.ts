@@ -1337,6 +1337,17 @@ export interface EngineHooks {
     x: number; y: number; relativeX: number; relativeY: number;
     terrainX: number; terrainY: number; terrainZ: number; overUI: boolean;
   };
+  /** The unit under the cursor, as a `unit` handle value (`DzGetUnitUnderMouse`). */
+  unitUnderMouse?(): JassValue;
+  /** `DzGetMouseFocus` — the script frame under the cursor, as a handle id (0 = none). */
+  mouseFocusFrame?(): number;
+  /** `DzSetUnitTexture(unit, path, texId)` — a per-unit texture override on its model. */
+  setUnitTexture?(unitId: number, path: string, texId: number): void;
+  /** `CreateItemPool` — a pool of item types for random drops. */
+  createItemPool?(): number;
+  destroyItemPool?(poolId: number): void;
+  /** `ItemPoolAddItemType(pool, itemId, weight)`. */
+  itemPoolAdd?(poolId: number, itemId: string, weight: number): void;
   /** GetLocationZ — "the current surface elevation … This includes the terrain (hills or
    *  water) and walkable destructables" (jassbot). */
   surfaceZ?(x: number, y: number): number;
