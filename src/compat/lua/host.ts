@@ -7,6 +7,9 @@ import { createHandleCodec } from "./handles";
 import { pushValue, readValue, type ValueBridge } from "./values";
 import type { LuaInputBridge } from "./input";
 import { installRequire, type RequireApi } from "./require";
+import { open as openCommon } from "./modules/common";
+import { open as openGlobals } from "./modules/globals";
+import { pushArrayProxy } from "./modules/jarray";
 
 // Running a map whose triggers are LUA (docs/map-compatibility.md, step 6).
 //
@@ -113,6 +116,18 @@ export interface LuaHostOptions {
   sleep?: boolean;
   /** How a handle crosses into Lua (handles.ts). Default 2, the YD default. */
   handleLevel?: 0 | 1 | 2;
+}
+
+/** What a `jass.*` module may ask of the host (docs/lua-engine-port.md §3.2). */
+export interface LuaModuleHost {
+  readonly L: LuaState;
+  readonly rt: Runtime;
+  readonly interp: Interpreter;
+  readonly options: LuaHostOptions;
+  push(L: LuaState, v: JassValue): void;
+  read(L: LuaState, i: number): JassValue;
+  pushEngineClosure(L: LuaState, name: string): void;
+  warnOnce(key: string, msg: string): void;
 }
 
 /**
@@ -340,6 +355,10 @@ export function createLuaMapScript(interp: Interpreter, seed: number, options: L
       // A JASS GLOBAL is read LIVE and never cached (see note 1).
       const g = rt.globals.get(key);
       if (g !== undefined) { push(S, g); return 1; }
+      // A JASS array is a live proxy, exactly as `jass.globals` hands one out (S5). An
+      // official Lua map writes `udg_A[i]` directly; a YD map uses the module.
+      const arr = rt.globalArrays.get(key);
+      if (arr) { pushArrayProxy({ push, read }, S, arr); return 1; }
       if (INTERCEPTED.has(key)) { pushWaitClosure(S); cacheGlobal(S, key); return 1; }
       if (LUA_ONLY.has(key)) { pushFourCC(S); cacheGlobal(S, key); return 1; }
       // A name the runtime knows how to call: a native, a blizzard.j function, or a native
@@ -430,6 +449,19 @@ export function createLuaMapScript(interp: Interpreter, seed: number, options: L
     -- Deterministic by construction: a match is lockstep, so every client seeds the same.
     math.randomseed(${seed | 0})
   `, "openwar3-lua-prologue");
+
+  // The façade the `jass.*` modules receive. It is the host, not a second API: a module may
+  // push a value, register an engine closure and say a warning, and nothing else.
+  const moduleHost: LuaModuleHost = {
+    L, rt, interp,
+    options,
+    push,
+    read,
+    pushEngineClosure,
+    warnOnce: (k, m) => rt.warnOnce(k, m),
+  };
+  preloads.set("jass.common", (S) => openCommon(moduleHost, S));
+  preloads.set("jass.globals", (S) => openGlobals(moduleHost, S));
 
   // `require` after the sandbox sweep, so `package` is ours and `load` stays nil. This must
   // happen BEFORE `before` is captured: `require` and the two C helpers are engine names, not
