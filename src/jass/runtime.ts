@@ -1465,6 +1465,14 @@ class HandleTable {
     this.interned.set(key, id);
     return id;
   }
+  /** The highest id handed out — `jass.debug.handlemax` (YD reports the table size). */
+  maxId(): number {
+    return this.nextId - 1;
+  }
+  /** Handles still live — `jass.debug.handlecount`. */
+  liveCount(): number {
+    return this.table.size;
+  }
 }
 
 /** Thrown when `TriggerSleepAction` is reached somewhere it cannot park the caller —
@@ -1561,6 +1569,9 @@ export class Runtime {
   /** A native's declared return type (from common.j) — so an unimplemented native
    *  can still return a correctly-typed default instead of undefined. */
   readonly nativeReturns = new Map<string, string>();
+  /** A native's declared PARAMETER types, in order — `jass.debug.functiondef` and the JAPI
+   *  signature table ask for them (docs/lua-engine-port.md §5.7). Same source as above. */
+  readonly nativeParams = new Map<string, string[]>();
   private warned = new Set<string>();
 
   /** Event-response stack (thread-local in the real engine): each fired trigger

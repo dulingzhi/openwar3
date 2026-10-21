@@ -2,14 +2,17 @@ import { lua, lauxlib, lualib, to_luastring, to_jsstring, type LuaState } from "
 import type { Interpreter } from "../../jass/interpreter";
 import type { HostFunction, Runtime } from "../../jass/runtime";
 import { rawcodeToInt } from "../../jass/lexer";
-import { asNum, asStr, JNULL, type JassValue } from "../../jass/values";
-import { createHandleCodec } from "./handles";
+import { asInt, asNum, asStr, defaultForType, JNULL, type JassValue } from "../../jass/values";
+import { createHandleCodec, type HandleCodec, type HandleMode } from "./handles";
 import { pushValue, readValue, type ValueBridge } from "./values";
 import type { LuaInputBridge } from "./input";
 import { installRequire, type RequireApi } from "./require";
 import { open as openCommon } from "./modules/common";
 import { open as openGlobals } from "./modules/globals";
+import { open as openRuntime } from "./modules/runtime";
+import { open as openDebug } from "./modules/debug";
 import { pushArrayProxy } from "./modules/jarray";
+import { createSettings, LUA_NOREF, type LuaRuntimeSettings } from "./settings";
 
 // Running a map whose triggers are LUA (docs/map-compatibility.md, step 6).
 //
@@ -72,6 +75,9 @@ const MAX_RESUMES = 100000;
 /** The names this host answers ITSELF rather than routing into the runtime (see the note). */
 const INTERCEPTED = new Set(["TriggerSleepAction", "PolledWait"]);
 
+/** The four natives YD marks `has_sleep` (libs_common.cpp:106-121). */
+const SLEEPING = new Set(["TriggerSleepAction", "TriggerSyncReady", "TriggerWaitForSound", "SyncSelections"]);
+
 /**
  * Globals that exist ONLY in Lua mode, because JASS has syntax for them and Lua has not.
  *
@@ -85,7 +91,7 @@ const INTERCEPTED = new Set(["TriggerSleepAction", "PolledWait"]);
 const LUA_ONLY = new Set(["FourCC"]);
 
 /** Base-library names a downloaded map has no business reaching. */
-const SANDBOX_REMOVE = ["io", "os", "dofile", "loadfile", "load", "loadstring", "collectgarbage", "debug"];
+const SANDBOX_REMOVE = ["io", "os", "dofile", "loadfile", "load", "loadstring", "collectgarbage"];
 
 export interface LuaMapScript {
   /** Run the map's chunk and publish its global functions. Throws the Lua error if it will
@@ -124,10 +130,19 @@ export interface LuaModuleHost {
   readonly rt: Runtime;
   readonly interp: Interpreter;
   readonly options: LuaHostOptions;
+  readonly settings: LuaRuntimeSettings;
   push(L: LuaState, v: JassValue): void;
   read(L: LuaState, i: number): JassValue;
   pushEngineClosure(L: LuaState, name: string): void;
+  /** The host name behind an engine closure at `i`, or null (a map Lua function). */
+  nameOfEngineFunction(L: LuaState, i: number): string | null;
   warnOnce(key: string, msg: string): void;
+  /** Call the script's `error_handle` (guarded), or log when none is set. */
+  reportError(msg: string): void;
+  /** Change how handles cross into Lua; the requested level is kept in `settings`. */
+  setHandleLevel(mode: HandleMode): void;
+  /** `jass.runtime.perftrace()` — a timing line, resetting the counters. */
+  perftrace(): string;
 }
 
 /**
@@ -139,6 +154,9 @@ export function createLuaMapScript(interp: Interpreter, seed: number, options: L
   const rt: Runtime = interp.rt;
   const L = lauxlib.luaL_newstate();
   lualib.luaL_openlibs(L);
+  installDebug();
+
+  const settings = createSettings({ sleep: options.sleep, handleLevel: options.handleLevel });
 
   /** Handle representation, interned per handle id — see handles.ts for the three levels. */
   // `handle_level = 0` pushes raw integers, which an UNTYPED native bridge cannot tell from
@@ -147,13 +165,68 @@ export function createLuaMapScript(interp: Interpreter, seed: number, options: L
   // (`jassbind::read_handle` is called only for a handle PARAMETER); we will have those
   // signatures in the runtime later, but they are not the contract of this layer. Fall back to
   // light userdata — identity still works, and nothing can be silently misread as a handle.
-  const handleLevel = options.handleLevel ?? 2;
-  if (handleLevel === 0) {
+  if (settings.handleLevel === 0) {
     rt.warnOnce("lua:handle_level", "raw integer handles cannot be distinguished from JASS integers here — using light userdata");
   }
-  const handles = createHandleCodec(handleLevel === 0 ? 1 : handleLevel);
+  // A wrapper, not the codec itself: `runtime.handle_level` can change mid-match and the
+  // bridge reads `handles.push/read` on every value, so swapping the codec is enough.
+  let codec: HandleCodec = createHandleCodec(settings.handleLevel === 0 ? 1 : settings.handleLevel);
+  const handles: HandleCodec = {
+    get mode() { return codec.mode; },
+    push: (L, h, ty) => codec.push(L, h, ty),
+    read: (L, i) => codec.read(L, i),
+    idOf: (L, i) => codec.idOf(L, i),
+    reset: () => codec.reset(),
+  };
+  const setHandleLevel = (mode: HandleMode): void => {
+    settings.handleLevel = mode;
+    const effective: HandleMode = mode === 0 ? 1 : mode;
+    if (effective === codec.mode) return;
+    codec.reset();
+    codec = createHandleCodec(effective);
+  };
   /** The JS function behind each engine closure, so `jass.debug.functiondef` can name it. */
   const engineFnNames = new WeakMap<Function, string>();
+
+  // --- errors and perftrace ---------------------------------------------------------------
+  const nowMs = (): number => (typeof performance !== "undefined" ? performance.now() : Date.now());
+  let perfStart = nowMs();
+  let perfCalls = 0;
+  let perfMs = 0;
+
+  /** Call the script's `error_handle`, guarded against a handler that throws or recurses. */
+  let reportingError = false;
+  const reportError = (msg: string): void => {
+    if (reportingError) { console.info(`[lua] ${msg}`); return; }
+    reportingError = true;
+    try {
+      if (settings.errorHandleRef !== LUA_NOREF) {
+        lua.lua_rawgeti(L, lua.LUA_REGISTRYINDEX, settings.errorHandleRef);
+        if (lua.lua_type(L, -1) === lua.LUA_TFUNCTION) {
+          lua.lua_pushstring(L, to_luastring(msg));
+          if (lua.lua_pcall(L, 1, 0, 0) !== lua.LUA_OK) {
+            const err = lua.lua_gettop(L) ? to_jsstring(lua.lua_tostring(L, -1)) : "?";
+            lua.lua_pop(L, 1);
+            console.info(`[lua] error_handle threw: ${err}`);
+          }
+        } else {
+          lua.lua_pop(L, 1);
+        }
+      } else {
+        console.info(`[lua] ${msg}`);
+      }
+    } finally {
+      reportingError = false;
+    }
+  };
+
+  const perftrace = (): string => {
+    const now = nowMs();
+    const total = now - perfStart;
+    const line = `total time[${total.toFixed(3)}ms], call count[${perfCalls}] time[${perfMs.toFixed(3)}ms]`;
+    perfStart = now; perfCalls = 0; perfMs = 0;
+    return line;
+  };
 
   /** Engine names this host has cached into `_G`. They are OURS, not the map's, and must
    *  never be published back as host functions — `IsUnitAliveBJ` registered as a host
@@ -187,6 +260,56 @@ export function createLuaMapScript(interp: Interpreter, seed: number, options: L
 
   /** One Lua stack slot as a JASS value. */
   const read = (S: LuaState, i: number): JassValue => readValue(S, i, bridge);
+
+  // --- the standard-library edges ----------------------------------------------------------
+  //
+  // `debug.traceback` STAYS: the shipped YD runtime script calls it from its own
+  // `error_handle` (example/JAPI/lua/runtime_init.lua), so removing the whole library breaks
+  // the convention the engine asks scripts to follow. The escape hatches go.
+  function installDebug(): void {
+    lua.lua_getglobal(L, to_luastring("debug"));
+    if (lua.lua_type(L, -1) !== lua.LUA_TTABLE) { lua.lua_pop(L, 1); return; }
+    for (const name of [
+      "sethook", "gethook", "debug", "getregistry", "setmetatable", "getmetatable",
+      "setupvalue", "upvalueid", "upvaluejoin", "setlocal", "setuservalue", "getuservalue",
+    ]) {
+      lua.lua_pushstring(L, to_luastring(name));
+      lua.lua_pushnil(L);
+      lua.lua_rawset(L, -3);
+    }
+    lua.lua_pop(L, 1);
+  }
+
+  /** `math.random` draws from the GAME's stream, as YD's does (fix_baselib.cpp:19-67). */
+  function installMathRandom(): void {
+    lua.lua_getglobal(L, to_luastring("math"));
+    if (lua.lua_type(L, -1) !== lua.LUA_TTABLE) { lua.lua_pop(L, 1); return; }
+
+    lua.lua_pushjsfunction(L, (S) => {
+      const argc = lua.lua_gettop(S);
+      const r = rt.random();
+      if (argc === 0) { lua.lua_pushnumber(S, r); return 1; }
+      if (argc === 1) {
+        const n = asInt(read(S, 1));
+        if (n < 1) { lua.lua_pushstring(S, to_luastring("interval is empty")); return lua.lua_error(S); }
+        lua.lua_pushinteger(S, 1 + Math.floor(r * n));
+        return 1;
+      }
+      const a = asInt(read(S, 1)), b = asInt(read(S, 2));
+      if (b < a) { lua.lua_pushstring(S, to_luastring("interval is empty")); return lua.lua_error(S); }
+      lua.lua_pushinteger(S, a + Math.floor(r * (b - a + 1)));
+      return 1;
+    });
+    lua.lua_setfield(L, -2, to_luastring("random"));
+
+    lua.lua_pushjsfunction(L, (S) => {
+      rt.setRandomSeed(asInt(read(S, 1)));
+      return 0;
+    });
+    lua.lua_setfield(L, -2, to_luastring("randomseed"));
+
+    lua.lua_pop(L, 1);
+  }
 
   // --- Lua functions the engine can call ----------------------------------------------
   //
@@ -261,7 +384,8 @@ export function createLuaMapScript(interp: Interpreter, seed: number, options: L
           continue;
         }
         if (status !== lua.LUA_OK) {
-          rt.warnOnce(name, `Lua error: ${lua.lua_gettop(co) ? to_jsstring(lua.lua_tostring(co, -1)) : "?"}`);
+          const msg = lua.lua_gettop(co) ? to_jsstring(lua.lua_tostring(co, -1)) : "?";
+          reportError(`Lua error in ${name}: ${msg}`);
           return JNULL;
         }
         return lua.lua_gettop(co) ? read(co, -1) : JNULL;
@@ -295,10 +419,18 @@ export function createLuaMapScript(interp: Interpreter, seed: number, options: L
   /** A closure that calls the engine function `name` with whatever Lua passed. */
   const pushEngineClosure = (S: LuaState, name: string): void => {
     const fn = (C: LuaState): number => {
+      // YD's `runtime.sleep = false`: the four sleeping natives are ignored with one note
+      // (libs_common.cpp:114-119). Only those four are affected; every other call is normal.
+      if (SLEEPING.has(name) && !settings.sleep) {
+        rt.warnOnce(`lua:sleep:${name}`, "runtime.sleep is off — call ignored");
+        push(C, defaultForType(rt.nativeReturns.get(name) ?? "nothing"));
+        return 1;
+      }
       const n = lua.lua_gettop(C);
       const args: JassValue[] = [];
       for (let i = 1; i <= n; i++) args.push(read(C, i));
       let out: JassValue;
+      const t0 = nowMs();
       try {
         // `adoptWaits`: a BJ that sleeps is handed to the scheduler rather than abandoned,
         // which is the same answer the JASS side gives a wait it cannot park inline.
@@ -306,6 +438,9 @@ export function createLuaMapScript(interp: Interpreter, seed: number, options: L
       } catch (err) {
         rt.warnOnce(name, `threw from Lua: ${(err as Error).message}`);
         out = JNULL;
+      } finally {
+        perfCalls++;
+        perfMs += nowMs() - t0;
       }
       push(C, out);
       return 1;
@@ -328,6 +463,10 @@ export function createLuaMapScript(interp: Interpreter, seed: number, options: L
   /** `TriggerSleepAction` / `PolledWait` — yield the coroutine instead of calling blizzard.j. */
   const pushWaitClosure = (S: LuaState): void => {
     lua.lua_pushjsfunction(S, (C: LuaState) => {
+      if (!settings.sleep) {
+        rt.warnOnce("lua:sleep:TriggerSleepAction", "runtime.sleep is off — call ignored");
+        return 0;
+      }
       const secs = lua.lua_gettop(C) ? Math.max(MIN_WAIT, asNum(read(C, 1))) : MIN_WAIT;
       lua.lua_settop(C, 0);
       // Nowhere to yield TO: the chunk's own top level, or a callback reached THROUGH a JASS
@@ -450,18 +589,29 @@ export function createLuaMapScript(interp: Interpreter, seed: number, options: L
     math.randomseed(${seed | 0})
   `, "openwar3-lua-prologue");
 
+  // AFTER the prologue: the prologue's `math.randomseed(seed)` is fengari's own seed, and
+  // running our replacement first would reseed the GAME's stream with the Lua constant.
+  installMathRandom();
+
   // The façade the `jass.*` modules receive. It is the host, not a second API: a module may
   // push a value, register an engine closure and say a warning, and nothing else.
   const moduleHost: LuaModuleHost = {
     L, rt, interp,
     options,
+    settings,
     push,
     read,
     pushEngineClosure,
+    nameOfEngineFunction: (S, i) => bridge.nameOfEngineFunction(S, i),
     warnOnce: (k, m) => rt.warnOnce(k, m),
+    reportError,
+    setHandleLevel,
+    perftrace,
   };
   preloads.set("jass.common", (S) => openCommon(moduleHost, S));
   preloads.set("jass.globals", (S) => openGlobals(moduleHost, S));
+  preloads.set("jass.runtime", (S) => openRuntime(moduleHost, S));
+  preloads.set("jass.debug", (S) => openDebug(moduleHost, S));
 
   // `require` after the sandbox sweep, so `package` is ours and `load` stays nil. This must
   // happen BEFORE `before` is captured: `require` and the two C helpers are engine names, not

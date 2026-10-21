@@ -315,7 +315,10 @@ export class Interpreter {
   /** Register a program's natives/functions and collect its global declarations
    *  (initialisers run later, in initGlobals, once every unit is loaded). */
   load(prog: JassProgram): void {
-    for (const n of prog.natives) this.rt.nativeReturns.set(n.name, n.returns);
+    for (const n of prog.natives) {
+      this.rt.nativeReturns.set(n.name, n.returns);
+      this.rt.nativeParams.set(n.name, n.params.map((p) => p.type));
+    }
     for (const f of prog.functions) this.rt.functions.set(f.name, f);
     this.globalDecls.push(...prog.globals);
   }
