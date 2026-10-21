@@ -860,7 +860,11 @@ data, or asset behaviour, **consult our sources** and cite what you used.
   `DzLoadToc`/`aaa2`) and `pnpm lua:scan` ranks real EX/Dz usage — `EXSetUnit*` only ever uses
   slots 10/61, and kkapi's 500+ `Dz*` names are OUT OF SCOPE unless the corpus demands one.
   Every `yd_jass_api` name has an implementation (the 52 `japi_add` + the demo's
-  `EXSetAbilityAEmeUnitID` spelling + the 3 `japi_hook` aliases). Writes to a shared row are
+  `EXSetAbilityAEmeUnitID` spelling + the 3 `japi_hook` aliases). **DzAPI
+  (`dz_w3_plugin`) is a DIFFERENT native layer** — 394 `Dz*`/`DzAPI_Map_*`/`RequestExtra*`
+  registered with `RegisterNativeFunction`, so they are natives first, not `jass.japi` names;
+  read [`docs/dzapi-port.md`](docs/dzapi-port.md) before touching it. kkapi's extra `Dz*`
+  registrations stay out of scope for now. Writes to a shared row are
   PER-MAP CLONES (`ItemRegistry.setCustom` / `AbilityRegistry.setBuffString`), and unit TYPE
   writes answer only slots 10/61 — the raw `CUnitData` slots the corpus proves. The effect
   matrix is an Euler yaw/pitch/roll approximation and collision bits other than 0 are stored
