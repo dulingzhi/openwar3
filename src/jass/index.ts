@@ -137,7 +137,7 @@ export function loadMapScript(
   // which is the same shape as a JASS map whose main() threw.
   if (mapLua) {
     try {
-      const lua = createLuaMapScript(interp, LUA_SEED);
+      const lua = createLuaMapScript(interp, LUA_SEED, { map, install });
       lua.load(mapLua, "war3map.lua");
       engine.lua = lua;
       console.info(`[lua] war3map.lua loaded — ${lua.functionCount()} map function(s) published`);

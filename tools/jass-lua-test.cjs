@@ -74,7 +74,7 @@ const CHUNK = [
   'function nums() return I2S(7 // 2) .. "/" .. R2S(7 / 2) end',
   'function readsGlobal() return bj_MAX_PLAYERS end',
   'function writesGlobal() bj_isSinglePlayer = true return bj_isSinglePlayer end',
-  'function sandbox() return (io == nil) and (os == nil) and (load == nil) and (require == nil) end',
+  'function sandbox() return (io == nil) and (os == nil) and (load == nil) and (require ~= nil) and (package ~= nil) end',
   '',
   'slept = 0',
   'function sleeper()',

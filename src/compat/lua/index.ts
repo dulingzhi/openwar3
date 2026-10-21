@@ -1,5 +1,5 @@
 import type { Interpreter } from "../../jass/interpreter";
-import type { LuaMapScript } from "./host";
+import type { LuaHostOptions, LuaMapScript } from "./host";
 
 // Loading the Lua front end ON DEMAND (docs/map-compatibility.md, step 6).
 //
@@ -25,9 +25,13 @@ export async function preloadLuaHost(): Promise<void> {
  * the caller is expected to have awaited `preloadLuaHost()`, and a silent no-op here would
  * be a map that starts with no triggers and no explanation.
  */
-export function createLuaMapScript(interp: Interpreter, seed: number): LuaMapScript {
+export function createLuaMapScript(
+  interp: Interpreter,
+  seed: number,
+  options: LuaHostOptions = {},
+): LuaMapScript {
   if (!host) throw new Error("the Lua front end has not been loaded (preloadLuaHost)");
-  return host.createLuaMapScript(interp, seed);
+  return host.createLuaMapScript(interp, seed, options);
 }
 
-export type { LuaMapScript } from "./host";
+export type { LuaHostOptions, LuaMapScript } from "./host";

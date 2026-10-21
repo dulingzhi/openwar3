@@ -2,7 +2,11 @@ import { lua, lauxlib, lualib, to_luastring, to_jsstring, type LuaState } from "
 import type { Interpreter } from "../../jass/interpreter";
 import type { HostFunction, Runtime } from "../../jass/runtime";
 import { rawcodeToInt } from "../../jass/lexer";
-import { asNum, asStr, jBool, jHandle, jInt, jReal, jStr, JNULL, type JassValue } from "../../jass/values";
+import { asNum, asStr, JNULL, type JassValue } from "../../jass/values";
+import { createHandleCodec } from "./handles";
+import { pushValue, readValue, type ValueBridge } from "./values";
+import type { LuaInputBridge } from "./input";
+import { installRequire, type RequireApi } from "./require";
 
 // Running a map whose triggers are LUA (docs/map-compatibility.md, step 6).
 //
@@ -78,7 +82,7 @@ const INTERCEPTED = new Set(["TriggerSleepAction", "PolledWait"]);
 const LUA_ONLY = new Set(["FourCC"]);
 
 /** Base-library names a downloaded map has no business reaching. */
-const SANDBOX_REMOVE = ["io", "os", "package", "require", "dofile", "loadfile", "load", "loadstring", "collectgarbage", "debug"];
+const SANDBOX_REMOVE = ["io", "os", "dofile", "loadfile", "load", "loadstring", "collectgarbage", "debug"];
 
 export interface LuaMapScript {
   /** Run the map's chunk and publish its global functions. Throws the Lua error if it will
@@ -88,8 +92,27 @@ export interface LuaMapScript {
   hasFunction(name: string): boolean;
   /** How many of the map's own functions were published (diagnostics). */
   functionCount(): number;
+  /** Require a module from JavaScript (the `exec-lua:` door). False on a Lua error. */
+  require(name: string): boolean;
   /** Drop the state and every host function it registered. */
   dispose(): void;
+}
+
+/** What the host cannot discover for itself (docs/lua-engine-port.md §3.3).
+ *
+ *  `map` is the one that matters to `require`: a YD map ships its Lua modules inside its own
+ *  archive. `install` is read by `jass.slk`. `input` is implemented by the app because the
+ *  compat layer may not import the renderer. */
+export interface LuaHostOptions {
+  map?: { rawBytes(path: string): Uint8Array | null };
+  install?: { rawBytes(path: string): Uint8Array | null };
+  input?: LuaInputBridge;
+  /** Where a map's own console output goes; defaults to console.info. */
+  log?: (level: string, text: string) => void;
+  /** YD's `runtime.sleep`. Default TRUE here — see the divergence table in the design doc. */
+  sleep?: boolean;
+  /** How a handle crosses into Lua (handles.ts). Default 2, the YD default. */
+  handleLevel?: 0 | 1 | 2;
 }
 
 /**
@@ -97,18 +120,25 @@ export interface LuaMapScript {
  * install's `common.j`, our compat prelude and `blizzard.j` loaded — that is what the
  * script's BJ calls and its constants resolve into.
  */
-export function createLuaMapScript(interp: Interpreter, seed: number): LuaMapScript {
+export function createLuaMapScript(interp: Interpreter, seed: number, options: LuaHostOptions = {}): LuaMapScript {
   const rt: Runtime = interp.rt;
   const L = lauxlib.luaL_newstate();
   lualib.luaL_openlibs(L);
 
-  /** Handle boxes, interned per handle id — see note 2. */
-  const handleBoxes = new Map<number, { h: number; ty: string }>();
-  const boxOf = (h: number, ty: string): { h: number; ty: string } => {
-    let box = handleBoxes.get(h);
-    if (!box) { box = { h, ty }; handleBoxes.set(h, box); }
-    return box;
-  };
+  /** Handle representation, interned per handle id — see handles.ts for the three levels. */
+  // `handle_level = 0` pushes raw integers, which an UNTYPED native bridge cannot tell from
+  // ordinary JASS integers on the way back: every `CreateTrigger()` would arrive at
+  // `TriggerAddAction` as an `int`. The original has per-function signatures to coerce with
+  // (`jassbind::read_handle` is called only for a handle PARAMETER); we will have those
+  // signatures in the runtime later, but they are not the contract of this layer. Fall back to
+  // light userdata — identity still works, and nothing can be silently misread as a handle.
+  const handleLevel = options.handleLevel ?? 2;
+  if (handleLevel === 0) {
+    rt.warnOnce("lua:handle_level", "raw integer handles cannot be distinguished from JASS integers here — using light userdata");
+  }
+  const handles = createHandleCodec(handleLevel === 0 ? 1 : handleLevel);
+  /** The JS function behind each engine closure, so `jass.debug.functiondef` can name it. */
+  const engineFnNames = new WeakMap<Function, string>();
 
   /** Engine names this host has cached into `_G`. They are OURS, not the map's, and must
    *  never be published back as host functions — `IsUnitAliveBJ` registered as a host
@@ -119,44 +149,29 @@ export function createLuaMapScript(interp: Interpreter, seed: number): LuaMapScr
   let nextAnonymous = 0;
 
   // --- values ------------------------------------------------------------------------
+  //
+  // The conversions themselves live in values.ts; the bridge supplies the three things only
+  // this state knows: which handle codec, how to name a Lua function, and how to push one.
+
+  const bridge: ValueBridge = {
+    handles,
+    functionName: (S, i) => nameForFunction(S, i),
+    pushNamedFunction: (S, name) => {
+      // A Lua function this state published first (a `code` passed back in), else an engine
+      // closure for the name. Never a bare string: a native expecting a `code` rejects one.
+      if (!pushFunction(S, name)) pushEngineClosure(S, name);
+    },
+    nameOfEngineFunction: (S, i) => {
+      const fn = lua.lua_tocfunction(S, i) as Function | null;
+      return fn ? engineFnNames.get(fn) ?? null : null;
+    },
+  };
 
   /** Push a JASS value onto `S`. */
-  const push = (S: LuaState, v: JassValue): void => {
-    switch (v.k) {
-      case "int": lua.lua_pushinteger(S, v.n); return;
-      case "real": lua.lua_pushnumber(S, v.n); return;
-      case "bool": lua.lua_pushboolean(S, v.b); return;
-      case "string": lua.lua_pushstring(S, to_luastring(v.s)); return;
-      case "handle": lua.lua_pushlightuserdata(S, boxOf(v.h, v.ty)); return;
-      // A `code` going this way is a JASS function NAME. A Lua script never receives one in
-      // practice (it passes its own functions in), so the readable name is the honest answer.
-      case "code": lua.lua_pushstring(S, to_luastring(v.fn)); return;
-      default: lua.lua_pushnil(S); return;
-    }
-  };
+  const push = (S: LuaState, v: JassValue): void => pushValue(S, v, bridge);
 
   /** One Lua stack slot as a JASS value. */
-  const read = (S: LuaState, i: number): JassValue => {
-    switch (lua.lua_type(S, i)) {
-      case lua.LUA_TBOOLEAN:
-        return jBool(lua.lua_toboolean(S, i));
-      // Lua 5.3 keeps integers and floats apart, and so does JASS — `7/2` is 3 in one and 3.5
-      // in the other. Carrying the distinction across rather than guessing is the whole reason
-      // the value model has two numeric kinds (values.ts).
-      case lua.LUA_TNUMBER:
-        return lua.lua_isinteger(S, i) ? jInt(lua.lua_tointeger(S, i)) : jReal(lua.lua_tonumber(S, i));
-      case lua.LUA_TSTRING:
-        return jStr(to_jsstring(lua.lua_tostring(S, i)));
-      case lua.LUA_TLIGHTUSERDATA: {
-        const box = lua.lua_touserdata(S, i) as { h: number; ty: string } | null;
-        return box && typeof box.h === "number" ? jHandle(box.h, box.ty) : JNULL;
-      }
-      case lua.LUA_TFUNCTION:
-        return { k: "code", fn: nameForFunction(S, i) };
-      default:
-        return JNULL;
-    }
-  };
+  const read = (S: LuaState, i: number): JassValue => readValue(S, i, bridge);
 
   // --- Lua functions the engine can call ----------------------------------------------
   //
@@ -264,7 +279,7 @@ export function createLuaMapScript(interp: Interpreter, seed: number): LuaMapScr
 
   /** A closure that calls the engine function `name` with whatever Lua passed. */
   const pushEngineClosure = (S: LuaState, name: string): void => {
-    lua.lua_pushjsfunction(S, (C: LuaState) => {
+    const fn = (C: LuaState): number => {
       const n = lua.lua_gettop(C);
       const args: JassValue[] = [];
       for (let i = 1; i <= n; i++) args.push(read(C, i));
@@ -279,7 +294,11 @@ export function createLuaMapScript(interp: Interpreter, seed: number): LuaMapScr
       }
       push(C, out);
       return 1;
-    });
+    };
+    // Remember which name this closure answers, for `jass.debug.functiondef`: the function
+    // VALUE is the only thing Lua hands back, and a name is what the runtime can describe.
+    engineFnNames.set(fn, name);
+    lua.lua_pushjsfunction(S, fn);
   };
 
   /** `FourCC("hfoo")` — a rawcode as the integer a JASS literal would have been. */
@@ -399,6 +418,9 @@ export function createLuaMapScript(interp: Interpreter, seed: number): LuaMapScr
   // in Lua mode is a table that reads its TYPE'S DEFAULT at an index nobody has written, which
   // is what makes `udg_Count[7] + 1` work on a fresh array. Test of Faith Reborn calls it 390
   // times, once per array its triggers declare.
+  /** Built-in modules (`jass.*`), filled by host.ts before the state is handed out. */
+  const preloads = new Map<string, (S: LuaState) => void>();
+
   run(`
     function __jarray(default_)
       return setmetatable({}, { __index = function() return default_ end })
@@ -408,6 +430,14 @@ export function createLuaMapScript(interp: Interpreter, seed: number): LuaMapScr
     -- Deterministic by construction: a match is lockstep, so every client seeds the same.
     math.randomseed(${seed | 0})
   `, "openwar3-lua-prologue");
+
+  // `require` after the sandbox sweep, so `package` is ours and `load` stays nil. This must
+  // happen BEFORE `before` is captured: `require` and the two C helpers are engine names, not
+  // the map's functions, and publishing them as host functions would be nonsense.
+  const requireApi: RequireApi = installRequire(
+    { L, map: options.map, warnOnce: (k, m) => rt.warnOnce(k, m) },
+    preloads,
+  );
 
   /** The global FUNCTION names defined right now, as a set. */
   function globalFunctionNames(): string[] {
@@ -451,10 +481,13 @@ export function createLuaMapScript(interp: Interpreter, seed: number): LuaMapScr
     functionCount(): number {
       return published.size;
     },
+    require(name: string): boolean {
+      return requireApi.requireModule(name);
+    },
     dispose(): void {
       for (const name of published) rt.hostFunctions.delete(name);
       published.clear();
-      handleBoxes.clear();
+      handles.reset();
     },
   };
 

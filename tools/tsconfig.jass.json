@@ -34,6 +34,8 @@
     "../src/compat/frames.ts",
     "../src/ui/scriptFrameTree.ts",
     "../src/compat/lua/host.ts",
+    "../src/compat/lua/values.ts",
+    "../src/compat/lua/handles.ts",
     "../src/data/objectData.ts",
     "../src/sim/alliances.ts",
     "../src/sim/vision.ts",

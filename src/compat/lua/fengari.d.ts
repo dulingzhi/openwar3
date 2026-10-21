@@ -32,33 +32,55 @@ declare module "fengari" {
     lua_pushnumber(L: LuaState, n: number): void;
     lua_pushstring(L: LuaState, s: Uint8Array): void;
     lua_pushlightuserdata(L: LuaState, v: unknown): void;
+    lua_newuserdata(L: LuaState, size: number): unknown;
+    lua_tocfunction(L: LuaState, i: number): unknown;
     lua_pushvalue(L: LuaState, i: number): void;
     lua_pushjsfunction(L: LuaState, fn: (L: LuaState) => number): void;
+    lua_pushcclosure(L: LuaState, fn: (L: LuaState) => number, n: number): void;
     lua_pushglobaltable(L: LuaState): void;
+    lua_newtable(L: LuaState): void;
     lua_createtable(L: LuaState, narr: number, nrec: number): void;
     lua_settable(L: LuaState, i: number): void;
+    lua_gettable(L: LuaState, i: number): number;
+    lua_rawget(L: LuaState, i: number): number;
     lua_rawset(L: LuaState, i: number): void;
+    lua_setfield(L: LuaState, i: number, name: Uint8Array): void;
+    lua_getfield(L: LuaState, i: number, name: Uint8Array): number;
     lua_setmetatable(L: LuaState, i: number): number;
+    lua_getmetatable(L: LuaState, i: number): number;
     lua_getglobal(L: LuaState, name: Uint8Array): number;
     lua_setglobal(L: LuaState, name: Uint8Array): void;
     lua_newthread(L: LuaState): LuaState;
     lua_resume(L: LuaState, from: LuaState | null, nargs: number): number;
     lua_pcall(L: LuaState, nargs: number, nresults: number, errfunc: number): number;
     lua_rawgeti(L: LuaState, t: number, n: number): number;
-    lua_rawget(L: LuaState, t: number): number;
+    lua_rawseti(L: LuaState, t: number, n: number): void;
+    lua_next(L: LuaState, i: number): number;
     lua_remove(L: LuaState, i: number): void;
     lua_insert(L: LuaState, i: number): void;
     lua_replace(L: LuaState, i: number): void;
     lua_yield(L: LuaState, nresults: number): number;
+    lua_error(L: LuaState): number;
     lua_isyieldable(L: LuaState): boolean;
+    lua_isnil(L: LuaState, i: number): boolean;
+    lua_isuserdata(L: LuaState, i: number): boolean;
+    lua_tolstring(L: LuaState, i: number, len?: number[]): Uint8Array;
+    lua_getupvalue(L: LuaState, i: number, n: number): Uint8Array | null;
+    lua_setupvalue(L: LuaState, i: number, n: number): Uint8Array | null;
+    lua_upvalueindex(i: number): number;
     lua_tojsstring(L: LuaState, i: number): string;
   };
 
   export const lauxlib: {
     luaL_newstate(): LuaState;
     luaL_loadbuffer(L: LuaState, buff: Uint8Array, size: number | null, name: Uint8Array): number;
+    luaL_loadstring(L: LuaState, s: Uint8Array): number;
     luaL_ref(L: LuaState, t: number): number;
     luaL_unref(L: LuaState, t: number, ref: number): void;
+    luaL_newmetatable(L: LuaState, name: Uint8Array): number;
+    luaL_getmetatable(L: LuaState, name: Uint8Array): number;
+    luaL_setfuncs(L: LuaState, funcs: unknown, nup: number): void;
+    luaL_checkudata(L: LuaState, i: number, name: Uint8Array): unknown;
   };
 
   export const lualib: {
