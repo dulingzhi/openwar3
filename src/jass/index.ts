@@ -94,6 +94,8 @@ export function loadMapScript(
     localViewHooks?: Iterable<string>;
     runMain?: boolean;
     lobby?: { slots: ReadonlyArray<LobbySlot>; localPlayer: number };
+    /** The app-side `jass.message` bridge (src/compat/lua/input.ts). */
+    input?: import("../compat/lua/input").LuaInputBridge;
     /** The playercolor index the four NEUTRAL players answer `GetPlayerColor` with — the
      *  black swatch, whose index is the install's (render/teamColor.ts `neutralTeamColor`).
      *  Passed in rather than read here: the interpreter never opens the art. */
@@ -137,7 +139,7 @@ export function loadMapScript(
   // which is the same shape as a JASS map whose main() threw.
   if (mapLua) {
     try {
-      const lua = createLuaMapScript(interp, LUA_SEED, { map, install });
+      const lua = createLuaMapScript(interp, LUA_SEED, { map, install, input: opts.input });
       lua.load(mapLua, "war3map.lua");
       engine.lua = lua;
       console.info(`[lua] war3map.lua loaded — ${lua.functionCount()} map function(s) published`);

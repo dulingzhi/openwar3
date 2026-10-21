@@ -43,6 +43,7 @@
     "../src/compat/lua/modules/stubs.ts",
     "../src/compat/lua/modules/code.ts",
     "../src/compat/lua/modules/slk.ts",
+    "../src/compat/lua/modules/message.ts",
     "../src/compat/lua/japi/decl.ts",
     "../src/compat/lua/japi/signature.ts",
     "../src/compat/lua/japi/registry.ts",

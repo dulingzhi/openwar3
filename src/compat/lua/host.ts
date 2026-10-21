@@ -19,6 +19,7 @@ import { open as openSelector } from "./modules/selector";
 import { openStub, openStorm } from "./modules/stubs";
 import { open as openCode } from "./modules/code";
 import { open as openSlk } from "./modules/slk";
+import { open as openMessage } from "./modules/message";
 import { YD_JAPI } from "./japi/decl";
 import { registerJapi, type JapiImpl } from "./japi/registry";
 import { damageImpls } from "./japi/damage";
@@ -716,6 +717,7 @@ export function createLuaMapScript(interp: Interpreter, seed: number, options: L
   preloads.set("jass.storm", (S) => openStorm(moduleHost, S));
   preloads.set("jass.code", (S) => openCode(moduleHost, S));
   preloads.set("jass.slk", (S) => openSlk(moduleHost, S));
+  preloads.set("jass.message", (S) => openMessage(moduleHost, S));
 
   // `require` after the sandbox sweep, so `package` is ours and `load` stays nil. This must
   // happen BEFORE `before` is captured: `require` and the two C helpers are engine names, not

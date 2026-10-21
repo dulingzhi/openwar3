@@ -4,9 +4,11 @@ This is the execution document for [`docs/lua-engine-port.md`](./lua-engine-port
 design document says **what** and **why**; this one says **in what order**, **in which file**,
 **with what code**, and **how it is proved**.
 
-**Status (2026-10-21): S1-S17 and the stub half of S19 are implemented and verified
-headlessly.** Remaining: S0 (the corpus scan tool), S18 (`jass.message`, the one step that
-needs a renderer bridge) and the docs/perf tail of S19.
+**Status (2026-10-21): S0-S18 and the stub half of S19 are implemented and verified.** The
+corpus scan (`tools/lua-usage-scan.cjs`) and the real demo-map test
+(`tools/lua-demo-test.cjs`, `pnpm lua:demo`) both run against the KKWE3 example maps. S18's
+MODULE is done; the app-side `LuaInputBridge` implementation is the remaining half (with no
+bridge every function is a safe no-op and says so once). The docs/perf tail of S19 remains.
 
 Verification in this checkout: `npx tsc --noEmit` is clean for every file these steps touch;
 the repo-wide `pnpm typecheck` still reports two errors in `src/voice/whisperWorker.ts`
