@@ -1865,6 +1865,15 @@ export interface SimUnit {
    *  0x20 amph, 0x40 unbuild). Stored so a later read/derivation can see it; the fly/float
    *  bits drive `flying`/`waterborne`. */
   moveMask?: number;
+  /** `DzSetUnit*` per-unit object-data overrides (renderer/info-panel reads). */
+  portrait?: string;
+  description?: string;
+  collisionSize?: number;
+  missileModel?: string;
+  missileArc?: number;
+  missileSpeed?: number;
+  missileHoming?: boolean;
+  preselectUIVisible?: boolean;
   /** `EXSetUnitCollisionType`'s 24-bit mask; bit 0 is the unit-unit collision the sim's own
    *  `noCollision` already models, so that one is applied. */
   collisionMask?: number;

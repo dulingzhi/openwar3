@@ -42,6 +42,7 @@ export function registerTextNatives(rt: Runtime): void {
       handleId: 0, text: "", x: 0, y: 0, z: 0, size: 0, color: 0xffffffff, visible: true,
       permanent: true, lifespan: 0, fadepoint: 0, age: 0, velX: 0, velY: 0,
       offsetX: 0, offsetY: 0, suspended: false, followUnit: -1, dead: false,
+      startAlpha: 255, shadowColor: 0xff000000,
     };
     tt.handleId = c.rt.handles.alloc(tt);
     c.rt.textTags.push(tt);

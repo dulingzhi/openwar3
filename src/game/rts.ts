@@ -8087,6 +8087,19 @@ export class RtsController {
   }
 
   /** Convert a CSS click to a world ground point (for build placement). */
+  /** `DzBlockSelectModeCommand` — a one-shot latch. The SelectMode command path consults it
+   *  (P3 of docs/dzapi-port.md); for now the native stores the request without changing the
+   *  player's input. */
+  private blockSelectCommand = false;
+  blockSelectModeCommand(): void {
+    this.blockSelectCommand = true;
+  }
+
+  /** Has a map asked to block the next SelectMode command? (Consumed by the input path in P3.) */
+  selectModeBlocked(): boolean {
+    return this.blockSelectCommand;
+  }
+
   /** The world point under the last pointer position (jass.message's `mouse()`). */
   pointerWorld(): { x: number; y: number } {
     const g = this.groundPoint(this.lastPointer.x, this.lastPointer.y);

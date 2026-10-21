@@ -188,6 +188,23 @@ export function simHooks(sim: SimWorld, teamOf: (player: number) => number): Par
         default: return false;
       }
     },
+    // DzSetUnit* — per-UNIT object-data overrides (war3japi_db.cpp). Name/ProperName use the
+    // existing setUnitName; the rest are stored here and read by the info panel / renderer.
+    setUnitDbField: (id, field, value) => {
+      const u = sim.units.get(id);
+      if (!u) return;
+      switch (field) {
+        case "portrait": u.portrait = String(value); break;
+        case "description": u.description = String(value); break;
+        case "collisionSize": u.collisionSize = Number(value); break;
+        case "missileModel": u.missileModel = String(value); break;
+        case "missileArc": u.missileArc = Number(value); break;
+        case "missileSpeed": u.missileSpeed = Number(value); break;
+        case "missileHoming": u.missileHoming = !!value; break;
+        case "preselectUIVisible": u.preselectUIVisible = !!value; break;
+        default: break;
+      }
+    },
     // EXSetUnitMoveType — the editor's Movement Type mask (0x01 foot, 0x02 horse, 0x04 fly,
     // 0x08 hover, 0x10 float, 0x20 amph, 0x40 unbuild). Fly/hover are air; float/amph path
     // water. The 0x40 unbuild bit has no separate pathing field here (see docs).

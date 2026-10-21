@@ -1,6 +1,7 @@
 # `dz_w3_plugin` → OpenWar3: porting the DzAPI native layer
 
-**Status (2026-10-21): P0 DONE; P1+ are the plan.** All 394 names are generated into
+**Status (2026-10-21): P0 done; P1 is in progress (strings, bits, groups, text tags,
+unit DB and the system/debug subset are live; effects and selection are next).** All 394 names are generated into
 [`src/compat/lua/japi/dzapi-decl.ts`](../src/compat/lua/japi/dzapi-decl.ts) by
 `pnpm dzapi:decl` and registered as JAPI aliases, so `jass.japi`, `jass.common` and `_G`
 all reach them with their signatures; an unimplemented one answers its typed default and

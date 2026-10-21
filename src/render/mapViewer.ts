@@ -1511,6 +1511,8 @@ export class MapViewerScene {
   onRestart: ((difficulty: number) => void) | null = null;
   // --- the trigger's on-screen output (7.19) ---
   private textTags: TextTagOverlay | null = null; // CreateTextTag, drawn in the world
+  /** `DzTextTagSetFont` — the game font file name; the overlay gets a CSS family from it. */
+  private textTagFontName = "Arial";
   // The ENGINE's own floating combat text — a Critical Strike's red "127!", a deny's "!".
   // Drawn by the overlay above but owned here, because no script is involved: it must work in
   // a melee match, where `rt.textTags` stays empty for the whole game.
@@ -3871,6 +3873,22 @@ export class MapViewerScene {
         const d = this.items.get(typeId); // the ItemRegistry (custom .w3t overlay first)
         return d ? { name: d.name, level: d.level, classType: d.classType, powerup: d.powerup, sellable: d.sellable, pawnable: d.pawnable } : null;
       },
+      // DzAPI system/misc: the map's own debug/log line, its locale, its file path, and the
+      // one player-tech removal. The process-memory/window functions are not here.
+      showMessage: (text) => console.info(text),
+      textTagFont: () => this.textTagFontName,
+      setTextTagFont: (file) => {
+        this.textTagFontName = (file.split(/[\/]/).pop() ?? file).replace(/\.ttf$/i, "") || "Arial";
+        if (this.textTags) this.textTags.fontFamily = this.textTagFontName;
+      },
+      locale: () => (typeof navigator !== "undefined" ? navigator.language : "en-US").replace("-", ""),
+      mapFilePath: () => this.mapFiles.archive?.label ?? "",
+      removePlayerTechResearched: (player, tech, levels) => {
+        const techState = this.rts?.simWorld.tech;
+        if (!techState) return;
+        techState.setResearchLevel(player, tech, Math.max(0, techState.researchLevel(player, tech) - levels));
+      },
+      blockSelectModeCommand: () => this.rts?.blockSelectModeCommand(),
       // EXDisplayChat (JAPI): a line that reads as the given player's chat. showChat, not
       // deliverChat — the original is a display and does not raise chat triggers.
       displayChat: (player, recipient, message) => {
@@ -4615,6 +4633,7 @@ export class MapViewerScene {
     // belongs in the world layer — the leaderboard/multiboard/timers below are SCREEN-anchored
     // UI and belong in #ui, which CSS has already fitted to the same stage.
     this.textTags = new TextTagOverlay(worldLayer());
+    this.textTags.fontFamily = this.textTagFontName;
     this.combatText.clear(); // last match's numbers are not this one's
     this.leaderboard = new LeaderboardOverlay(ui, this.vfs, skin, (p) => this.rts?.playerColor(p) ?? p);
     // The map's own frames (BlzCreateFrame …), drawn out of its archive over the install, and

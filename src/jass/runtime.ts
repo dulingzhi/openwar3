@@ -82,6 +82,10 @@ export interface TextTagObj {
    *  the ENGINE raises for itself (a crit number, a deny mark — see CombatTextTags), which
    *  the real client centres over the unit's head. */
   centered?: boolean;
+  /** `DzTextTagSetStartAlpha` — the alpha (0-255) the tag starts from before its fade. */
+  startAlpha?: number;
+  /** `DzTextTagSetShadowColor` — 0xAARRGGBB; the overlay draws it as a 1px drop shadow. */
+  shadowColor?: number;
 }
 
 /** One button of a JASS `dialog` (DialogAddButton / DialogAddQuitButton). The engine
@@ -904,6 +908,21 @@ export interface EngineHooks {
   declareButtonIcon?(path: string): void;
   /** `EXBlendButtonIcon` — A over B into a virtual 64x64 BLP at `output`. */
   blendButtonIcon?(inputA: string, inputB: string, output: string): boolean;
+  /** `DzTextTagGetFont/SetFont` — the GLOBAL text-tag font (not a per-tag field). */
+  textTagFont?(): string;
+  setTextTagFont?(file: string): void;
+  /** `DzSetUnit*` per-UNIT object-data overrides (name/properName use `setUnitName`). */
+  setUnitDbField?(unitId: number, field: string, value: string | number | boolean): void;
+  /** `DzDebugString` / `DzWriteLog` — a map's own line to the host's message/log sink. */
+  showMessage?(text: string): void;
+  /** `DzGetLocale` — a Battle.net-style locale ("enUS", "zhCN"). */
+  locale?(): string;
+  /** `DzGetMapFilePath` — the map's path/label, lower-cased by the caller. */
+  mapFilePath?(): string;
+  /** `DzRemovePlayerTechResearched` — drop `levels` from a player's upgrade level. */
+  removePlayerTechResearched?(player: number, techId: string, levels: number): void;
+  /** `DzBlockSelectModeCommand` — one-shot block of the SelectMode command. */
+  blockSelectModeCommand?(): void;
   /** `EXDisplayChat` — put a line on screen as if `player` said it. Recipients: 0 all,
    *  1 allies, 2 observers, 3 private (YDWEJapiOther.j). A DISPLAY, not a chat send. */
   displayChat?(player: number, recipient: number, message: string): void;

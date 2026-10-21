@@ -22,6 +22,7 @@ import { open as openSlk } from "./modules/slk";
 import { open as openMessage } from "./modules/message";
 import { JAPI_HOOK_ALIASES, YD_JAPI } from "./japi/decl";
 import { DZAPI } from "./japi/dzapi-decl";
+import { installDzapi } from "./japi/dzapi/index";
 import { registerJapi, registerJapiAlias, type JapiImpl } from "./japi/registry";
 import { damageImpls } from "./japi/damage";
 import { itemImpls } from "./japi/item";
@@ -718,6 +719,7 @@ export function createLuaMapScript(interp: Interpreter, seed: number, options: L
   // JAPI alias so `jass.japi`, `jass.common` and `_G` all reach it with its signature; until a
   // pack installs an implementation the call answers its typed default and logs once.
   for (const decl of DZAPI) registerJapiAlias(rt, decl);
+  installDzapi(rt);
 
   preloads.set("jass.common", (S) => openCommon(moduleHost, S));
   preloads.set("jass.globals", (S) => openGlobals(moduleHost, S));

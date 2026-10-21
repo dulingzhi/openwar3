@@ -57,6 +57,8 @@ interface Live {
 }
 
 export class TextTagOverlay {
+  /** `DzTextTagSetFont` — a CSS family derived from the game's font file name. */
+  fontFamily = "";
   private readonly root: HTMLDivElement;
   private readonly live = new Map<number, Live>(); // texttag handle id → its element
 
@@ -91,7 +93,7 @@ export class TextTagOverlay {
       const p = ctx.project(x, y, ctx.groundHeight(x, y) + base + tt.z);
       if (!p) continue; // behind the camera
 
-      const alpha = fadeAlpha(tt) * (((tt.color >>> 24) & 0xff) / 255);
+      const alpha = fadeAlpha(tt) * (((tt.color >>> 24) & 0xff) / 255) * ((tt.startAlpha ?? 255) / 255);
       if (alpha <= 0.01) continue;
 
       seen.add(tt.handleId);
