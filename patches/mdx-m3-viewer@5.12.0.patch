@@ -2183,7 +2183,7 @@ index 3e7460e457fec7d247ebcb2b8641ffb028f47736..6bca9cb85b2e627bb4b110d8f4cc0655
  
    mat3 mv = mat3(u_MV);
 diff --git a/dist/cjs/viewer/handlers/mdx/shaders/sd.frag.js b/dist/cjs/viewer/handlers/mdx/shaders/sd.frag.js
-index 235f29101256617d34587316e8f40984a8f95685..93e5f65f2899a83548fcc3c83d4eccdff9edb903 100644
+index 235f29101256617d34587316e8f40984a8f95685..03f3b334358ba134ecc4159dad2a8df6ad1fc90a 100644
 --- a/dist/cjs/viewer/handlers/mdx/shaders/sd.frag.js
 +++ b/dist/cjs/viewer/handlers/mdx/shaders/sd.frag.js
 @@ -11,12 +11,135 @@ uniform sampler2D u_texture;
@@ -2280,7 +2280,7 @@ index 235f29101256617d34587316e8f40984a8f95685..93e5f65f2899a83548fcc3c83d4eccdf
 +  float additiveFade = 0.0;
 +  if (u_distFogEnabled < 0.5) return rgb;
 +  float fogF = clamp((u_distFogEnd - dot(u_distFogEye - v_worldPos, u_distFogDir)) / (u_distFogEnd - u_distFogStart), 0.0, 1.0);
-+  if (filterMode == 3 || filterMode == 4) return rgb * fogF; // additive fades OUT with fog
++  if (filterMode >= 3.0 && filterMode <= 4.0) return rgb * fogF; // additive fades OUT with fog
 +  additiveFade = fogF;
 +  float dist = dot(u_distFogEye - v_worldPos, u_distFogDir); // view depth — see u_distFogDir
 +  float f = clamp((u_distFogEnd - dist) / (u_distFogEnd - u_distFogStart), 0.0, 1.0);
