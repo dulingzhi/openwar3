@@ -2024,7 +2024,11 @@ export class MapViewerScene {
       baseUrls.delete(path);
     }
 
-    return new MapViewerScene(canvas, viewer, created, vfs, loadUnitRegistry(vfs), loadAbilityRegistry(vfs), loadItemRegistry(vfs), loadTechRegistry(vfs), loadUpgradeRegistry(vfs), solver, mapFiles, sounds);
+    const scene = new MapViewerScene(canvas, viewer, created, vfs, loadUnitRegistry(vfs), loadAbilityRegistry(vfs), loadItemRegistry(vfs), loadTechRegistry(vfs), loadUpgradeRegistry(vfs), solver, mapFiles, sounds);
+    // The developer's handle: ?dev sessions can reach the live scene from the console or an
+    // automation probe (which model draws what, where the camera stands, …).
+    if (location.search.includes("dev")) (window as unknown as { __ow3: unknown }).__ow3 = scene;
+    return scene;
   }
 
   /**
