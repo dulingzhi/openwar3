@@ -16864,20 +16864,36 @@ export class MapViewerScene {
    *  literally and that map is stuck zoomed miles out with no escape (the wheel moves the
    *  distance, not the lens).
    *
-   *  The translation preserves the FRAMING RATIO — what a field of `f` frames at a given
-   *  distance in WC3, ours frames too — so it is done in tan-space, not on the angle:
-   *  tan(lens/2) = tan(f/2) · tan(32°/2)/tan(70°/2). The default (70) lands exactly on 32°, and
-   *  a map that narrows to a telephoto narrows by the same factor it does in the real game. */
-  private static readonly FOV_SCALE =
-    Math.tan((MapViewerScene.LENS_FOV_DEG * Math.PI) / 360) / Math.tan((MapViewerScene.WC3_FOV_DEG * Math.PI) / 360);
+   *  The mapping was long assumed to preserve the FRAMING RATIO in tan-space (anchored at
+   *  70 → 32°); DSIII is the first map caught using another field, and it breaks that
+   *  assumption. Its login camera (CB) says field 40, and the real client renders that WIDER
+   *  than tan-space predicts — measured off the real client's own login: the moon doodad D00Z
+   *  is a 184-unit quad at 2274 units from the login eye, so it sits 10.0° above the view axis
+   *  (computed from the fields CB applies — eye/focus are lens-independent), and the real
+   *  screenshot draws its centre 519 px above the frame centre of a 1484 px-high render:
+   *  tan(halfLens) = tan(10°) · 742/519 → **28.3°** (cross-check: the quad then spans 119 px,
+   *  and its bright core reads 97 px — the core fills ~4/5 of it, as GenericGlowX does). A
+   *  tan-space mapping would render 17° there and push the moon clean out of frame, which is
+   *  not what the real client shows. So the lens is LINEAR in the field through the two
+   *  measured points, 40 → 28° and 70 → 32° (slope 2/15 °/field) — strongly compressive at the
+   *  top, which is why the assumption hid for this long: nothing we render used a non-default
+   *  field until DSIII. */
+  /** The second measured point: DSIII's login field, and the lens the real client renders it
+   *  with (see fovFromWc3 for the measurement). */
+  private static readonly DSIII_LOGIN_FIELD = 40;
+  private static readonly DSIII_LOGIN_LENS_DEG = 28;
+  /** The lens is linear in the field between the two measured points. */
+  private static readonly LENS_PER_FIELD =
+    (MapViewerScene.LENS_FOV_DEG - MapViewerScene.DSIII_LOGIN_LENS_DEG) / (MapViewerScene.WC3_FOV_DEG - MapViewerScene.DSIII_LOGIN_FIELD);
   private static fovFromWc3(deg: number): number {
-    return 2 * Math.atan(Math.tan((clamp(deg, 1, 170) * Math.PI) / 360) * MapViewerScene.FOV_SCALE);
+    // returns RADIANS — this.fov is radians everywhere else (writeCamera clamps to π·0.9).
+    return ((MapViewerScene.LENS_FOV_DEG + (clamp(deg, 1, 170) - MapViewerScene.WC3_FOV_DEG) * MapViewerScene.LENS_PER_FIELD) * Math.PI) / 180;
   }
 
   /** The inverse: the lens reported back on the scale a script speaks, so GetCameraField reads
    *  70 on the default camera exactly as WC3 does, and a tween starts from the right place. */
   private static fovToWc3(rad: number): number {
-    return (2 * Math.atan(Math.tan(rad / 2) / MapViewerScene.FOV_SCALE) * 180) / Math.PI;
+    return MapViewerScene.WC3_FOV_DEG + ((rad * 180) / Math.PI - MapViewerScene.LENS_FOV_DEG) / MapViewerScene.LENS_PER_FIELD;
   }
 
   /** The live camera in the units the JASS setters speak (degrees for the angles). This and

@@ -15,8 +15,9 @@ and the field defaults are in [`src/data/gameplayConstants.ts`](../src/data/game
 
 | Quantity | Value | Where it comes from |
 |---|---|---|
-| **Rendered lens** | **32°** vertical FOV | Measured off the real client (below). NOT the FOV field |
+| **Rendered lens** | **32°** vertical FOV at field 70 | Measured off the real client (below). NOT the FOV field |
 | FOV *field* | 70 | `Scripts\Blizzard.j` `bj_CAMERA_DEFAULT_FOV` — what a script SAYS; `fovFromWc3` puts it on the lens |
+| Lens vs field | **linear**, 2/15 °/field | Two measured points: 70 → 32°, DSIII's login 40 → 28° (below). The old tan-space assumption is dead |
 | Default distance | 1650 | `bj_CAMERA_DEFAULT_DISTANCE` — what a match opens on **in the real client** |
 | Distance we open on | **2400** | Ours, and a deliberate departure: the far end of the wheel (`MELEE_START` = `ZOOM_MAX`) |
 | Angle of attack | 304 (= −56°) | `bj_CAMERA_DEFAULT_AOA` |
@@ -88,9 +89,17 @@ Both calibrated against a **model**, so both inherited whatever our own renderer
 that model's size. The worker spacing doesn't have that failure mode.
 
 > The FOV field is still 70 wherever WC3 writes it, and `GetCameraField` must still answer 70 on
-> the default camera. `fovFromWc3`/`fovToWc3` translate in **tan-space**, so the framing *ratio* a
-> script asks for is preserved: 70 ⇒ 32°, and a map that narrows to a telephoto narrows by the
-> same factor it does in the real game.
+> the default camera. `fovFromWc3`/`fovToWc3` used to translate in **tan-space** — assumed to
+> preserve the framing *ratio* a script asks for. **DSIII broke that assumption** (2026-10-22):
+> its login camera says field 40, and the real client renders that at ~28° — measured off the
+> real login screenshot with the moon as the ruler (the D00Z quad is 184 units at 2274 units
+> from the login eye, so it sits 10.0° above the view axis; the real frame draws its centre
+> 519 px above the frame centre of a 1484 px render ⇒ tan(halfLens) = tan(10°)·742/519 ≈ 28°).
+> Tan-space would render 17° there and push the moon clean out of frame. The mapping is now
+> **linear in the field through the two measured points**, 40 → 28° and 70 → 32° — strongly
+> compressive toward the top, which is exactly why the assumption hid this long: nothing we
+> rendered used a non-default field until DSIII. Nothing outside [40, 70] has been measured;
+> the linear extrapolation past the ends is the model, not a measurement.
 
 ## The focus rides the terrain
 
