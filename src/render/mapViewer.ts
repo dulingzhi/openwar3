@@ -4694,7 +4694,7 @@ export class MapViewerScene {
       this.mapScript?.interp.fireFrameEvent(frame, event, this.localPlayer));
     // The map's SPRITE/MODEL frames (DzFrameSetModel — DSIII's bars and loading screen) draw
     // as real models into one extra scene on the game viewer, not as DOM.
-    this.scriptFrames.attachModels(this.viewer, this.solver, this.canvas);
+    this.scriptFrames.attachModels(this.viewer, this.solver, this.canvas, () => this.assetFiles());
     this.multiboard = new MultiboardOverlay(ui, this.vfs, skin);
     this.timerDialogs = new TimerDialogOverlay(ui, this.vfs, skin);
     this.cinematic = new CinematicPanelOverlay(ui, this.vfs, skin);

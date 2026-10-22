@@ -14,6 +14,8 @@
 // per-frame state (visible/alpha/offset/size) is read out of the FrameModel by handle, so an
 // animated bar never bumps the tree's revision.
 
+import MdlxModel from "mdx-m3-viewer/dist/cjs/parsers/mdlx/model";
+import type { DataSource } from "../vfs/types";
 import type { FrameModel, FrameObj } from "../jass/index";
 import type { Solver } from "../render/assetSolver";
 
@@ -23,12 +25,22 @@ type ModelHost = {
   load: (path: string, solver: Solver) => Promise<unknown>;
 };
 
+/** The per-axis size of the model's own extent — the viewer model keeps only bounds
+ *  (centre + radius), which cannot answer "how wide vs how tall" for the stretch. */
+interface SpriteDims {
+  /** Extent size along the model's x (screen width when stood up). */
+  w: number;
+  /** Extent size along the model's y (screen height once stood up). */
+  h: number;
+}
+
 interface SpriteEntry {
   handle: number;
   name: string;
   modelPath: string;
   instance: SpriteInstance | null;
-  model: { sequences: Array<{ name: string; interval?: ArrayLike<number> }>; bounds: { x: number; z: number; r: number } } | null;
+  model: { sequences: Array<{ name: string; interval?: ArrayLike<number> }>; bounds: { x: number; y: number; z: number; r: number } } | null;
+  dims: SpriteDims | null;
   sequence: number;
 }
 
@@ -37,7 +49,8 @@ interface SpriteInstance {
   setScene: (s: unknown) => void;
   setSequence: (i: number) => void;
   setSequenceLoopMode: (m: number) => void;
-  setUniformScale: (s: number) => void;
+  setScale: (v: ArrayLike<number>) => void;
+  setRotation: (q: ArrayLike<number>) => void;
   setLocation: (l: number[]) => void;
   show: () => void;
   hide: () => void;
@@ -48,8 +61,15 @@ interface SpriteInstance {
 interface SpriteModel {
   addInstance: () => SpriteInstance;
   sequences: Array<{ name: string; interval?: ArrayLike<number> }>;
-  bounds: { x: number; z: number; r: number };
+  bounds: { x: number; y: number; z: number; r: number };
 }
+
+/** +90° about X: a WC3 model is authored Z-up, and a UI sprite is authored LYING ON THE
+ *  GROUND plane (its art spans x/y at a constant z — loading_inmap.mdx is a flat 0.2×0.15
+ *  sheet). The game's sprite camera looks down at the floor; ours looks horizontally along
+ *  +Y, so the instance is stood up by a quarter turn and the art faces it (the +Z face
+ *  turns to −Y). */
+const UPRIGHT = new Float32Array([Math.SQRT1_2, 0, 0, Math.SQRT1_2]);
 
 export class UiModelLayer {
   private scene: {
@@ -71,6 +91,7 @@ export class UiModelLayer {
     private canvas: HTMLCanvasElement,
     private viewer: ModelHost,
     private solver: Solver,
+    private files: () => DataSource,
   ) {
     this.scene = viewer.addScene() as UiModelLayer["scene"];
   }
@@ -86,8 +107,22 @@ export class UiModelLayer {
     }
     for (const s of specs) {
       if (this.entries.has(s.name) || this.failed.has(s.modelPath)) continue;
-      const entry: SpriteEntry = { handle: s.handle, name: s.name, modelPath: s.modelPath, instance: null, model: null, sequence: -1 };
+      const entry: SpriteEntry = { handle: s.handle, name: s.name, modelPath: s.modelPath, instance: null, model: null, dims: null, sequence: -1 };
       this.entries.set(s.name, entry);
+      // The viewer model keeps only bounds (centre + radius), which cannot answer "how wide
+      // vs how tall" — the stretch needs the model's own extent, so parse the header for it.
+      const dims = ((): SpriteDims | null => {
+        try {
+          const bytes = this.files().rawBytes(s.modelPath);
+          if (!bytes) return null;
+          const m = new MdlxModel();
+          m.load(bytes);
+          return { w: m.extent.max[0] - m.extent.min[0], h: m.extent.max[1] - m.extent.min[1] };
+        } catch {
+          return null;
+        }
+      })();
+      entry.dims = dims;
       void this.viewer
         .load(s.modelPath, this.solver)
         .then((raw) => {
@@ -123,7 +158,7 @@ export class UiModelLayer {
 
     for (const e of this.entries.values()) {
       const inst = e.instance;
-      if (!inst || !e.model) continue;
+      if (!inst || !e.model || !e.dims) continue;
       const f: FrameObj | undefined = model.frames.get(e.handle);
       const rect = this.rects.get(e.name);
       if (!f || !f.visible || !rect || rect.width < 1 || rect.height < 1) {
@@ -131,15 +166,19 @@ export class UiModelLayer {
         continue;
       }
       inst.show();
-      // Fit the model's own bounds (a flat bar's extent width is its longest side, which is
-      // what bounds.r halves) into the frame's rect, centred on it.
-      const half = Math.max(e.model.bounds.r, 1);
-      const scale = (rect.width * k) / (half * 2);
-      inst.setUniformScale(scale);
+      // Stretch the art over the frame's rect NON-uniformly — the game stretches a loading
+      // screen to the frame rather than fitting it (docs/loading-screens.md), and these
+      // models are authored at the art's own aspect (0.2×0.15 = 4:3) for a 4:3 screen.
       const cx = (rect.left + rect.width / 2) * k;
       const cy = ch - (rect.top + rect.height / 2) * k; // screen y down → world z up
+      const sx = (rect.width * k) / Math.max(e.dims.w, 1e-6);
+      const sy = (rect.height * k) / Math.max(e.dims.h, 1e-6);
+      inst.setScale([sx, sy, Math.max(sx, sy)]);
+      inst.setRotation(UPRIGHT);
+      // bounds.x/.y are the extent CENTRE; after the quarter turn the model's y spans world
+      // z, so the centre that must land on the rect's centre is (bounds.x, bounds.y).
       const b = e.model.bounds;
-      inst.setLocation([cx - b.x * scale, 0, cy + b.z * scale]);
+      inst.setLocation([cx - b.x * sx, 0, cy - b.y * sy]);
       // DzFrameSetAnimate(index)/SetAnimateOffset: the clip index, and the position within
       // it as a fraction — written straight onto the instance clock every tick.
       const seq = Math.max(0, Math.min(e.model.sequences.length - 1, f.animateIndex ?? 0));

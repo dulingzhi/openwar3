@@ -57,13 +57,15 @@ export class ScriptFrameOverlay {
     private onEvent: (frameHandle: number, eventIndex: number) => void,
   ) {}
 
-  /** Hand the layer the game viewer: sprite frames render into one extra scene on it. */
+  /** Hand the layer the game viewer: sprite frames render into one extra scene on it.
+   *  `files` re-reads the raw mdx for its extent (the stretch needs per-axis sizes). */
   attachModels(
     viewer: { addScene: () => unknown; load: (path: string, solver: Solver) => Promise<unknown> },
     solver: Solver,
     canvas: HTMLCanvasElement,
+    files: () => DataSource,
   ): void {
-    if (!this.modelLayer) this.modelLayer = new UiModelLayer(this.container, canvas, viewer, solver);
+    if (!this.modelLayer) this.modelLayer = new UiModelLayer(this.container, canvas, viewer, solver, files);
   }
 
   /** Poll, every frame. `model` null (or holding no frame of the map's) takes it down. */
