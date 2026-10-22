@@ -107,6 +107,8 @@ export class WorldOmniLightsCollector {
       light.getIntensity(s, sequence, frame, counter);
       const intensity = s[0];
       if (intensity <= 0) continue;
+      light.getVisibility(s, sequence, frame, counter);
+      if (s[0] <= 0) continue; // the KLAV track — the lamp is OFF through this stretch of its clip
       light.getAttenuationStart(s, sequence, frame, counter);
       const att0 = s[0];
       light.getAttenuationEnd(s, sequence, frame, counter);
@@ -152,6 +154,8 @@ interface WorldLight {
   type: number;
   getColor(out: Float32Array, sequence: number, frame: number, counter: number): void;
   getIntensity(out: Float32Array, sequence: number, frame: number, counter: number): void;
+  /** The light's KLAV track — 0 while the model's clip keeps the light OFF. */
+  getVisibility(out: Float32Array, sequence: number, frame: number, counter: number): void;
   getAttenuationStart(out: Float32Array, sequence: number, frame: number, counter: number): void;
   getAttenuationEnd(out: Float32Array, sequence: number, frame: number, counter: number): void;
 }

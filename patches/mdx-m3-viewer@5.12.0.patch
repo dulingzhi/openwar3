@@ -1059,10 +1059,10 @@ index 87e3bbdbf1377c888ac650cf23029492fc1a05f7..b92458b2d3645c0bcec2169797706a84
              const params = reforged ? { reforged: true } : undefined;
              for (let i = 0; i < teams; i++) {
 diff --git a/dist/cjs/viewer/handlers/mdx/layer.js b/dist/cjs/viewer/handlers/mdx/layer.js
-index 0d26837b8214841c35ccc52702bb9593a1cc18fc..da36f77883806182bb3b4b37a0f89e3c17ca894f 100644
+index 0d26837b8214841c35ccc52702bb9593a1cc18fc..54aafdb4707a21dd792a2aff4442895fa8a62ad5 100644
 --- a/dist/cjs/viewer/handlers/mdx/layer.js
 +++ b/dist/cjs/viewer/handlers/mdx/layer.js
-@@ -48,14 +48,36 @@ class Layer extends animatedobject_1.default {
+@@ -48,14 +48,41 @@ class Layer extends animatedobject_1.default {
          this.addVariants('KMTA', 'alpha');
          this.addVariants('KMTF', 'textureId');
      }
@@ -1089,6 +1089,11 @@ index 0d26837b8214841c35ccc52702bb9593a1cc18fc..da36f77883806182bb3b4b37a0f89e3c
 +        // its effect glows as Unshaded so they stay lit at midnight. Warsmash's mdx
 +        // shader does the same (`if (!u_unshaded) { ...lightSystem... }`).
 +        gl.uniform1f(shader.uniforms['u_unshaded'], this.unshaded ? 1 : 0);
++        // OpenWar3: the layer's Unfogged flag (0x20) — WC3 skips distance fog for such
++        // layers entirely. DSIII's login moon (moon.mdx, both layers 0x31) is drawn
++        // bright through the map's night fog on the real client because of exactly this
++        // flag; the additive fog fade treated it like any other glow and dimmed it away.
++        gl.uniform1f(shader.uniforms['u_unfogged'], this.unfogged ? 1 : 0);
          gl.uniform1f(shader.uniforms['u_filterMode'], this.filterMode);
          if (this.blended) {
              gl.enable(gl.BLEND);
@@ -1101,7 +1106,7 @@ index 0d26837b8214841c35ccc52702bb9593a1cc18fc..da36f77883806182bb3b4b37a0f89e3c
          else {
              gl.disable(gl.BLEND);
          }
-@@ -71,7 +93,7 @@ class Layer extends animatedobject_1.default {
+@@ -71,7 +98,7 @@ class Layer extends animatedobject_1.default {
          else {
              gl.enable(gl.DEPTH_TEST);
          }
@@ -1110,6 +1115,28 @@ index 0d26837b8214841c35ccc52702bb9593a1cc18fc..da36f77883806182bb3b4b37a0f89e3c
              gl.depthMask(false);
          }
          else {
+diff --git a/dist/cjs/viewer/handlers/mdx/light.js b/dist/cjs/viewer/handlers/mdx/light.js
+index 26f19cc8602b73f9bd835e54b0952355852650dd..4597cf9d10c1ae0d7b64a05a0078b65047799ed5 100644
+--- a/dist/cjs/viewer/handlers/mdx/light.js
++++ b/dist/cjs/viewer/handlers/mdx/light.js
+@@ -32,6 +32,16 @@ class Light extends genericobject_1.default {
+     getAmbientColor(out, sequence, frame, counter) {
+         return this.getVectorValue(out, 'KLBC', sequence, frame, counter, this.ambientColor);
+     }
++    /**
++     * OpenWar3: the light's KLAV visibility track. The stock handler never read it, so
++     * a light whose clip keeps it OFF was evaluated as full-on — DSIII's street lamp
++     * (HFMLampLight) keys KLAV 0→1 at frame 2066 of its clip, so its warm pool lit the
++     * login ground through the seconds the real client keeps it dark. The generic
++     * default answers 1 without consulting any track.
++     */
++    getVisibility(out, sequence, frame, counter) {
++        return this.getScalarValue(out, 'KLAV', sequence, frame, counter, 1);
++    }
+ }
+ exports.default = Light;
+ //# sourceMappingURL=light.js.map
+\ No newline at end of file
 diff --git a/dist/cjs/viewer/handlers/mdx/model.js b/dist/cjs/viewer/handlers/mdx/model.js
 index 5f2c0c2ffbfae107c42070fe99e41669814924ef..3101fe8514c3933b217efeeaa2f1397b99c5d7ea 100644
 --- a/dist/cjs/viewer/handlers/mdx/model.js
@@ -2183,13 +2210,15 @@ index 3e7460e457fec7d247ebcb2b8641ffb028f47736..6bca9cb85b2e627bb4b110d8f4cc0655
  
    mat3 mv = mat3(u_MV);
 diff --git a/dist/cjs/viewer/handlers/mdx/shaders/sd.frag.js b/dist/cjs/viewer/handlers/mdx/shaders/sd.frag.js
-index 235f29101256617d34587316e8f40984a8f95685..03f3b334358ba134ecc4159dad2a8df6ad1fc90a 100644
+index 235f29101256617d34587316e8f40984a8f95685..f68b0218664b225564d41dbbe4cea74a283ed8b0 100644
 --- a/dist/cjs/viewer/handlers/mdx/shaders/sd.frag.js
 +++ b/dist/cjs/viewer/handlers/mdx/shaders/sd.frag.js
-@@ -11,12 +11,135 @@ uniform sampler2D u_texture;
+@@ -10,6 +10,82 @@ ${quattransform_glsl_1.default}
+ uniform sampler2D u_texture;
  uniform float u_filterMode;
  uniform bool u_unshaded;
- 
++uniform float u_unfogged; // OpenWar3: the layer's Unfogged flag (0x20) — see applyDistFog
++
 +// OpenWar3: whole-instance transparency — the alpha of the instance's vertex colour
 +// (issue #66), 1 = opaque. Kept out of v_color so the 1-bit alpha test below still
 +// sees the layer's own alpha; see sd.vert. Layers pick up matching blend state in
@@ -2264,10 +2293,10 @@ index 235f29101256617d34587316e8f40984a8f95685..03f3b334358ba134ecc4159dad2a8df6
 +uniform vec4 u_boundaryParams;
 +uniform vec3 u_boundaryLit;    // BoundaryObject, rgb 0..1
 +uniform vec3 u_boundaryFogged; // FoggedBoundaryObject, rgb 0..1
-+
+ 
  varying vec2 v_uv;
  varying vec3 v_normal;
- varying vec4 v_color;
+@@ -17,6 +93,57 @@ varying vec4 v_color;
  varying vec4 v_uvTransRot;
  varying float v_uvScale;
  varying vec3 v_lightDir;
@@ -2279,6 +2308,9 @@ index 235f29101256617d34587316e8f40984a8f95685..03f3b334358ba134ecc4159dad2a8df6
 +vec3 applyDistFog(vec3 rgb, float filterMode) {
 +  float additiveFade = 0.0;
 +  if (u_distFogEnabled < 0.5) return rgb;
++  // Unfogged layers (0x20) never see distance fog — DSIII's moon rides on one, which
++  // is why it is bright at any distance on the real client. See layer.js's u_unfogged.
++  if (u_unfogged > 0.5) return rgb;
 +  float fogF = clamp((u_distFogEnd - dot(u_distFogEye - v_worldPos, u_distFogDir)) / (u_distFogEnd - u_distFogStart), 0.0, 1.0);
 +  if (filterMode >= 3.0 && filterMode <= 4.0) return rgb * fogF; // additive fades OUT with fog
 +  additiveFade = fogF;
@@ -2322,7 +2354,7 @@ index 235f29101256617d34587316e8f40984a8f95685..03f3b334358ba134ecc4159dad2a8df6
  
  vec4 getDiffuseColor() {
    vec2 uv = v_uv;
-@@ -43,7 +166,7 @@ vec4 getDiffuseColor() {
+@@ -43,7 +170,7 @@ vec4 getDiffuseColor() {
      discard;
    }
  
@@ -2331,7 +2363,7 @@ index 235f29101256617d34587316e8f40984a8f95685..03f3b334358ba134ecc4159dad2a8df6
  }
  
  void onlyTexCoords() {
-@@ -55,19 +178,44 @@ void onlyNormals() {
+@@ -55,19 +182,44 @@ void onlyNormals() {
  }
  
  void onlyDiffuse() {
@@ -2431,7 +2463,7 @@ index 49733805785c0ef269901d8928e47a953ada93a9..f15149f33f353822f4cb73eaf85eb727
    gl_Position = u_VP * vec4(position, 1.0);
  }
 diff --git a/dist/cjs/viewer/handlers/w3x/map.js b/dist/cjs/viewer/handlers/w3x/map.js
-index e4c8ea760e92653ef6423bd34f9111d0b062a901..bba8ce8bd1801c6b98eb57f72a96f1979c87caaa 100644
+index e4c8ea760e92653ef6423bd34f9111d0b062a901..27e5e2c15c6b03b5973d41aa44d0eaba062de710 100644
 --- a/dist/cjs/viewer/handlers/w3x/map.js
 +++ b/dist/cjs/viewer/handlers/w3x/map.js
 @@ -16,6 +16,41 @@ const file_3 = require("../../../parsers/w3x/doo/file");
@@ -2811,13 +2843,48 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..bba8ce8bd1801c6b98eb57f72a96f197
          this.waterBuffer = gl.createBuffer();
          gl.bindBuffer(gl.ARRAY_BUFFER, this.waterBuffer);
          gl.bufferData(gl.ARRAY_BUFFER, waterFlags, gl.STATIC_DRAW);
-@@ -358,7 +557,25 @@ class War3MapViewerMap {
+@@ -358,7 +557,60 @@ class War3MapViewerMap {
                          }
                          promise.then((model) => {
                              if (model) {
 -                                this.doodads.push(new doodad_1.default(this, model, row, doodad));
 +                                const instance = new doodad_1.default(this, model, row, doodad);
 +                                this.doodads.push(instance);
++                                // OpenWar3: the type row's vertex tint (DoodadMetaData's
++                                // dvR1/dvG1/dvB1). DSIII's login paints its whole mood
++                                // through these: the lamp halo D00D is (128,128,255), the
++                                // moon D00Z (200,225,255), the distant trees (65,80,150) —
++                                // a white-tinted halo is the bug that drew it as a bare
++                                // white mass. The FIELD the mod landed in is asked of the
++                                // mounted meta, never hardcoded: TFT's meta routes dvR1 to
++                                // the per-variation `vertR01` column while the 1.27 patch's
++                                // routes it to a plain `vertR` — hardcoding either spelling
++                                // reads 255 (the SLK default) on the other install and
++                                // silently untints every doodad. Missing cells stay 255 —
++                                // only a cell the w3d actually SET is read, because
++                                // MappedDataRow.number() answers 0 for an absent cell and
++                                // a black-tinted doodad is worse than a white one.
++                                const tintField = (id) => {
++                                    // The meta map is CASE-SENSITIVE (MappedDataRow lowercases
++                                    // stored keys, but MappedData.getRow does not fold the row
++                                    // id), and the w3d parser hands the ids out lowercase —
++                                    // the same spelling applyModificationTable looked them up
++                                    // with one screen above.
++                                    const metaRow = this.viewer.doodadMetaData.getRow(id);
++                                    return metaRow ? metaRow.string('field') : null;
++                                };
++                                const rf = tintField('dvr1');
++                                const gf = tintField('dvg1');
++                                const bf = tintField('dvb1');
++                                if (rf && gf && bf) {
++                                    const r = row.string(rf);
++                                    const g = row.string(gf);
++                                    const b = row.string(bf);
++                                    const chan = (v) => v !== undefined && v !== '' ? Number(v) / 255 : 1;
++                                    if (r !== undefined && r !== '' || g !== undefined && g !== '' || b !== undefined && b !== '') {
++                                        instance.instance.setVertexColor([chan(r), chan(g), chan(b), 1]);
++                                    }
++                                }
 +                                // OpenWar3: destructibles override their model's
 +                                // replaceable texture per row (texID/texFile) — this is
 +                                // how one LordaeronTree model shows summer, fall, snow
@@ -2838,7 +2905,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..bba8ce8bd1801c6b98eb57f72a96f197
                              }
                          });
                      }
-@@ -485,6 +702,31 @@ class War3MapViewerMap {
+@@ -485,6 +737,31 @@ class War3MapViewerMap {
              worldScene.renderTranslucent();
          }
      }
@@ -2870,7 +2937,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..bba8ce8bd1801c6b98eb57f72a96f197
      renderGround() {
          if (this.terrainReady) {
              const gl = this.viewer.gl;
-@@ -503,6 +745,9 @@ class War3MapViewerMap {
+@@ -503,6 +780,9 @@ class War3MapViewerMap {
              gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
              webgl.useShader(shader);
              gl.uniformMatrix4fv(uniforms['u_VP'], false, this.worldScene.camera.viewProjectionMatrix);
@@ -2880,7 +2947,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..bba8ce8bd1801c6b98eb57f72a96f197
              gl.uniform2fv(uniforms['u_offset'], this.centerOffset);
              gl.uniform2f(uniforms['u_size'], this.columns, this.rows);
              gl.uniform1i(uniforms['u_heightMap'], 15);
-@@ -527,7 +772,19 @@ class War3MapViewerMap {
+@@ -527,7 +807,19 @@ class War3MapViewerMap {
                  gl.uniform1i(uniforms[`u_tilesets[${i}]`], i);
                  webgl.bindTexture(tilesetTextures[i], i);
              }
@@ -2901,7 +2968,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..bba8ce8bd1801c6b98eb57f72a96f197
              if (tilesetCount > 15) {
                  gl.uniform1f(uniforms['u_baseTileset'], 15);
                  for (let i = 0, l = tilesetCount - 15; i < l; i++) {
-@@ -535,7 +792,7 @@ class War3MapViewerMap {
+@@ -535,7 +827,7 @@ class War3MapViewerMap {
                      gl.uniform1f(uniforms[`u_extended[${i}]`], isExtended);
                      webgl.bindTexture(tilesetTextures[i + 15], i);
                  }
@@ -2910,7 +2977,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..bba8ce8bd1801c6b98eb57f72a96f197
              }
              instancedArrays.vertexAttribDivisorANGLE(texturesAttrib, 0);
              instancedArrays.vertexAttribDivisorANGLE(variationsAttrib, 0);
-@@ -558,11 +815,18 @@ class War3MapViewerMap {
+@@ -558,11 +850,18 @@ class War3MapViewerMap {
              gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
              webgl.useShader(shader);
              gl.uniformMatrix4fv(uniforms['u_VP'], false, this.worldScene.camera.viewProjectionMatrix);
@@ -2929,7 +2996,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..bba8ce8bd1801c6b98eb57f72a96f197
              gl.uniform1f(uniforms['u_offsetHeight'], this.waterHeightOffset);
              gl.uniform4fv(uniforms['u_maxDeepColor'], this.maxDeepColor);
              gl.uniform4fv(uniforms['u_minDeepColor'], this.minDeepColor);
-@@ -582,7 +846,14 @@ class War3MapViewerMap {
+@@ -582,7 +881,14 @@ class War3MapViewerMap {
              gl.vertexAttribPointer(isWaterAttrib, 1, gl.UNSIGNED_BYTE, false, 1, 0);
              instancedArrays.vertexAttribDivisorANGLE(isWaterAttrib, 1);
              gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.faceBuffer);
@@ -2945,7 +3012,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..bba8ce8bd1801c6b98eb57f72a96f197
              instancedArrays.vertexAttribDivisorANGLE(isWaterAttrib, 0);
              instancedArrays.vertexAttribDivisorANGLE(instanceAttrib, 0);
          }
-@@ -599,6 +870,9 @@ class War3MapViewerMap {
+@@ -599,6 +905,9 @@ class War3MapViewerMap {
              gl.disable(gl.BLEND);
              shader.use();
              gl.uniformMatrix4fv(uniforms['u_VP'], false, this.worldScene.camera.viewProjectionMatrix);
@@ -2955,7 +3022,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..bba8ce8bd1801c6b98eb57f72a96f197
              gl.uniform1i(uniforms['u_heightMap'], 0);
              gl.uniform2f(uniforms['u_pixel'], 1 / (this.columns + 1), 1 / (this.rows + 1));
              gl.uniform2fv(uniforms['u_centerOffset'], this.centerOffset);
-@@ -612,6 +886,23 @@ class War3MapViewerMap {
+@@ -612,6 +921,23 @@ class War3MapViewerMap {
                  gl.activeTexture(gl.TEXTURE2);
                  gl.bindTexture(gl.TEXTURE_2D, this.cliffTextures[1].webglResource);
              }
@@ -2979,7 +3046,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..bba8ce8bd1801c6b98eb57f72a96f197
              // Set instanced attributes.
              if (!vertexArrayObject) {
                  instancedArrays.vertexAttribDivisorANGLE(attribs['a_instancePosition'], 1);
-@@ -671,6 +962,106 @@ class War3MapViewerMap {
+@@ -671,6 +997,106 @@ class War3MapViewerMap {
          const topRight = corners[row + 1][column + 1].layerHeight;
          return bottomLeft !== bottomRight || bottomLeft !== topLeft || bottomLeft !== topRight;
      }
@@ -3086,7 +3153,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..bba8ce8bd1801c6b98eb57f72a96f197
      /**
       * Is the tile at the given column and row water?
       */
-@@ -692,6 +1083,108 @@ class War3MapViewerMap {
+@@ -692,6 +1118,108 @@ class War3MapViewerMap {
          }
          return 0;
      }
@@ -3195,7 +3262,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..bba8ce8bd1801c6b98eb57f72a96f197
      /**
       * Get the ground texture of a corner, whether it's normal ground, a cliff, or a blighted corner.
       */
-@@ -730,17 +1223,37 @@ class War3MapViewerMap {
+@@ -730,17 +1258,37 @@ class War3MapViewerMap {
      applyModificationTable(dataMap, metadataMap, modificationTable) {
          for (const modificationObject of modificationTable.objects) {
              let row;
