@@ -75,6 +75,7 @@ import { resolveTipRefs } from "../data/tipRefs";
 import { loadItemRegistry, type ItemRegistry } from "../data/items";
 import { CAMERA, MELEE, MINIMAP, MISC_DATA, TEXT_TAG, heroReviveCost, mapMiscEpoch, miscKeyIsRead, setMapMiscOverlay, type ReviveMode } from "../data/gameplayConstants";
 import { DayNightCycle, type DayNightLight } from "./dayNight";
+import { WorldOmniLightsCollector } from "./worldOmni";
 import { makeMapFog, type DistFog } from "./fog";
 import { TimeIndicatorClock, timeIndicatorPath } from "./timeIndicator";
 
@@ -1278,6 +1279,9 @@ export class MapViewerScene {
   // load, so the tileset rig is built at load and a script's swap-in REPLACES it (DSIII's
   // Trig_map_initActions). Read fresh each applyDayNight; cleared on map load.
   private scriptDayNight: DayNightCycle | null = null;
+  // The map's model lights (MDX LITE omnis — a lamp, a campfire), evaluated per frame
+  // into the array both the model shader and the terrain shaders read (render/worldOmni.ts).
+  private worldOmni = new WorldOmniLightsCollector();
   private mapFog: DistFog | null = null; // the map's w3i environment fog (distance haze)
   private w3iFog: DistFog | null = null; // …as the w3i declared it — what ResetTerrainFog restores
   // The top-bar day/night medallion — the real UI\Console\<Race>\<Race>UI-TimeIndicator
@@ -2165,6 +2169,10 @@ export class MapViewerScene {
       this.mapBounds = cameraBoundsOf(terrain);
       // The tileset picks which DNC light models shade this map (WorldEditData.txt).
       this.dayNight = DayNightCycle.load(this.vfs, lightEnvironment(archive, terrain.tileset));
+      // Bind the model-light array onto the scene once; the collector mutates it in place
+      // every frame, and the batchgroup + terrain shaders read it off the scene (patches).
+      const wMap = this.viewer.map;
+      if (wMap) (wMap.worldScene as unknown as { omniLights: unknown }).omniLights = this.worldOmni.lights;
       // Building ground-texture (ubersplat) overlay — needs only terrain + the GL
       // context, both ready here, so build it now (unlike fog, which waits on vision).
       // stampMapPathing (pre-placed buildings) and spawnUnit register splats into it.
@@ -15539,6 +15547,11 @@ export class MapViewerScene {
       // moving.
       perfLog.begin("anim");
       baseUpdate.call(this.viewer, wdt);
+      // The world's model lights (MDX LITE omnis — DSIII's lamp, a campfire) are evaluated
+      // from the nodes this pass just moved, into the array both the model shader (the
+      // batchgroup uploads it already) and the terrain shaders read. Render/worldOmni.ts.
+      const wMapNow = this.viewer.map;
+      if (wMapNow) this.worldOmni.update(wMapNow.worldScene as never, (wMapNow.worldScene as { camera: { location: ArrayLike<number> } }).camera);
       if (!this.paused) this.updateMapWidgets();
       // Re-pin under-construction buildings AFTER the animation advance so a
       // halted build's Birth animation truly freezes (and resumes with progress).

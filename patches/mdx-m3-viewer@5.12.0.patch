@@ -856,7 +856,7 @@ index 26347d6d988194c95415c2a40597123e80bd61a2..3d28cc4165be8474ed4005abfe3ce726
      }
  }
 diff --git a/dist/cjs/viewer/handlers/mdx/batchgroup.js b/dist/cjs/viewer/handlers/mdx/batchgroup.js
-index 7fe06bd7314e83b578dc8987e819b08cea287dfb..5fd7c8cafea4782e3833d3992fe245fb834a333f 100644
+index 7fe06bd7314e83b578dc8987e819b08cea287dfb..dea3c0cc347ba3ccaf780b93d59784e2cfbe1b2f 100644
 --- a/dist/cjs/viewer/handlers/mdx/batchgroup.js
 +++ b/dist/cjs/viewer/handlers/mdx/batchgroup.js
 @@ -2,6 +2,8 @@
@@ -868,7 +868,7 @@ index 7fe06bd7314e83b578dc8987e819b08cea287dfb..5fd7c8cafea4782e3833d3992fe245fb
  /**
   * A group of batches that are going to be rendered together.
   */
-@@ -31,11 +33,117 @@ class BatchGroup {
+@@ -31,11 +33,119 @@ class BatchGroup {
          const shader = handler_1.default.getBatchShader(viewer, skinningType, isHd);
          shader.use();
          const uniforms = shader.uniforms;
@@ -905,7 +905,9 @@ index 7fe06bd7314e83b578dc8987e819b08cea287dfb..5fd7c8cafea4782e3833d3992fe245fb
 +        // keyed by their first element here (gl/shader.js expands them), and one uniform3fv on
 +        // that location writes the whole array. Same no-op rule as dnc.
 +        const omni = scene.omniLights;
-+        if (omni && omni.count > 0) {
++        // Array uniform calls on an ABSENT location throw (a shader variant that optimised
++        // the omni loop out holds no such key); scalar calls no-op instead. Guard the arrays.
++        if (omni && omni.count > 0 && uniforms['u_omniPos[0]'] !== undefined) {
 +            gl.uniform1f(uniforms['u_omniEnabled'], 1);
 +            gl.uniform3fv(uniforms['u_omniAmbient'], omni.ambient);
 +            gl.uniform3fv(uniforms['u_omniPos[0]'], omni.positions);
@@ -987,7 +989,7 @@ index 7fe06bd7314e83b578dc8987e819b08cea287dfb..5fd7c8cafea4782e3833d3992fe245fb
              gl.uniform1f(uniforms['u_hasBones'], 1);
              gl.uniform1i(uniforms['u_boneMap'], 15);
              gl.uniform1f(uniforms['u_vectorSize'], 1 / boneTexture.width);
-@@ -44,24 +152,14 @@ class BatchGroup {
+@@ -44,24 +154,14 @@ class BatchGroup {
          else {
              gl.uniform1f(uniforms['u_hasBones'], 0);
          }
@@ -1014,7 +1016,7 @@ index 7fe06bd7314e83b578dc8987e819b08cea287dfb..5fd7c8cafea4782e3833d3992fe245fb
              for (const index of this.objects) {
                  const batch = batches[index];
                  const geoset = batch.geoset;
-@@ -115,6 +213,14 @@ class BatchGroup {
+@@ -115,6 +215,14 @@ class BatchGroup {
              const uvAnims = instance.uvAnims;
              gl.uniform4fv(uniforms['u_vertexColor'], instance.vertexColor);
              gl.uniform1i(uniforms['u_texture'], 0);
@@ -1029,7 +1031,7 @@ index 7fe06bd7314e83b578dc8987e819b08cea287dfb..5fd7c8cafea4782e3833d3992fe245fb
              for (const object of this.objects) {
                  const batch = batches[object];
                  const geoset = batch.geoset;
-@@ -133,7 +239,7 @@ class BatchGroup {
+@@ -133,7 +241,7 @@ class BatchGroup {
                      gl.uniform2f(uniforms['u_uvTrans'], uvAnim[0], uvAnim[1]);
                      gl.uniform2f(uniforms['u_uvRot'], uvAnim[2], uvAnim[3]);
                      gl.uniform1f(uniforms['u_uvScale'], uvAnim[4]);
@@ -2425,7 +2427,7 @@ index 49733805785c0ef269901d8928e47a953ada93a9..f15149f33f353822f4cb73eaf85eb727
    gl_Position = u_VP * vec4(position, 1.0);
  }
 diff --git a/dist/cjs/viewer/handlers/w3x/map.js b/dist/cjs/viewer/handlers/w3x/map.js
-index e4c8ea760e92653ef6423bd34f9111d0b062a901..aca20db2d9ec1c0e3546c002f49bfea2909dd5ef 100644
+index e4c8ea760e92653ef6423bd34f9111d0b062a901..bba8ce8bd1801c6b98eb57f72a96f1979c87caaa 100644
 --- a/dist/cjs/viewer/handlers/w3x/map.js
 +++ b/dist/cjs/viewer/handlers/w3x/map.js
 @@ -16,6 +16,41 @@ const file_3 = require("../../../parsers/w3x/doo/file");
@@ -2864,16 +2866,17 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..aca20db2d9ec1c0e3546c002f49bfea2
      renderGround() {
          if (this.terrainReady) {
              const gl = this.viewer.gl;
-@@ -503,6 +745,8 @@ class War3MapViewerMap {
+@@ -503,6 +745,9 @@ class War3MapViewerMap {
              gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
              webgl.useShader(shader);
              gl.uniformMatrix4fv(uniforms['u_VP'], false, this.worldScene.camera.viewProjectionMatrix);
 +            this.setDayNightUniforms(uniforms); // OpenWar3: day/night shading
++            this.setOmniUniforms(uniforms); // OpenWar3: model-light pools
 +            this.setDistFogUniforms(uniforms); // OpenWar3: atmospheric distance fog
              gl.uniform2fv(uniforms['u_offset'], this.centerOffset);
              gl.uniform2f(uniforms['u_size'], this.columns, this.rows);
              gl.uniform1i(uniforms['u_heightMap'], 15);
-@@ -527,7 +771,19 @@ class War3MapViewerMap {
+@@ -527,7 +772,19 @@ class War3MapViewerMap {
                  gl.uniform1i(uniforms[`u_tilesets[${i}]`], i);
                  webgl.bindTexture(tilesetTextures[i], i);
              }
@@ -2894,7 +2897,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..aca20db2d9ec1c0e3546c002f49bfea2
              if (tilesetCount > 15) {
                  gl.uniform1f(uniforms['u_baseTileset'], 15);
                  for (let i = 0, l = tilesetCount - 15; i < l; i++) {
-@@ -535,7 +791,7 @@ class War3MapViewerMap {
+@@ -535,7 +792,7 @@ class War3MapViewerMap {
                      gl.uniform1f(uniforms[`u_extended[${i}]`], isExtended);
                      webgl.bindTexture(tilesetTextures[i + 15], i);
                  }
@@ -2903,11 +2906,12 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..aca20db2d9ec1c0e3546c002f49bfea2
              }
              instancedArrays.vertexAttribDivisorANGLE(texturesAttrib, 0);
              instancedArrays.vertexAttribDivisorANGLE(variationsAttrib, 0);
-@@ -558,11 +814,17 @@ class War3MapViewerMap {
+@@ -558,11 +815,18 @@ class War3MapViewerMap {
              gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
              webgl.useShader(shader);
              gl.uniformMatrix4fv(uniforms['u_VP'], false, this.worldScene.camera.viewProjectionMatrix);
 +            this.setDayNightUniforms(uniforms); // OpenWar3: day/night shading
++            this.setOmniUniforms(uniforms); // OpenWar3: model-light pools
 +            this.setDistFogUniforms(uniforms); // OpenWar3: atmospheric distance fog
              gl.uniform2fv(uniforms['u_offset'], this.centerOffset);
              gl.uniform2f(uniforms['u_size'], this.columns, this.rows);
@@ -2921,7 +2925,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..aca20db2d9ec1c0e3546c002f49bfea2
              gl.uniform1f(uniforms['u_offsetHeight'], this.waterHeightOffset);
              gl.uniform4fv(uniforms['u_maxDeepColor'], this.maxDeepColor);
              gl.uniform4fv(uniforms['u_minDeepColor'], this.minDeepColor);
-@@ -582,7 +844,14 @@ class War3MapViewerMap {
+@@ -582,7 +846,14 @@ class War3MapViewerMap {
              gl.vertexAttribPointer(isWaterAttrib, 1, gl.UNSIGNED_BYTE, false, 1, 0);
              instancedArrays.vertexAttribDivisorANGLE(isWaterAttrib, 1);
              gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.faceBuffer);
@@ -2937,16 +2941,17 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..aca20db2d9ec1c0e3546c002f49bfea2
              instancedArrays.vertexAttribDivisorANGLE(isWaterAttrib, 0);
              instancedArrays.vertexAttribDivisorANGLE(instanceAttrib, 0);
          }
-@@ -599,6 +868,8 @@ class War3MapViewerMap {
+@@ -599,6 +870,9 @@ class War3MapViewerMap {
              gl.disable(gl.BLEND);
              shader.use();
              gl.uniformMatrix4fv(uniforms['u_VP'], false, this.worldScene.camera.viewProjectionMatrix);
 +            this.setDayNightUniforms(uniforms); // OpenWar3: day/night shading
++            this.setOmniUniforms(uniforms); // OpenWar3: model-light pools
 +            this.setDistFogUniforms(uniforms); // OpenWar3: atmospheric distance fog
              gl.uniform1i(uniforms['u_heightMap'], 0);
              gl.uniform2f(uniforms['u_pixel'], 1 / (this.columns + 1), 1 / (this.rows + 1));
              gl.uniform2fv(uniforms['u_centerOffset'], this.centerOffset);
-@@ -612,6 +883,23 @@ class War3MapViewerMap {
+@@ -612,6 +886,23 @@ class War3MapViewerMap {
                  gl.activeTexture(gl.TEXTURE2);
                  gl.bindTexture(gl.TEXTURE_2D, this.cliffTextures[1].webglResource);
              }
@@ -2970,7 +2975,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..aca20db2d9ec1c0e3546c002f49bfea2
              // Set instanced attributes.
              if (!vertexArrayObject) {
                  instancedArrays.vertexAttribDivisorANGLE(attribs['a_instancePosition'], 1);
-@@ -671,6 +959,86 @@ class War3MapViewerMap {
+@@ -671,6 +962,106 @@ class War3MapViewerMap {
          const topRight = corners[row + 1][column + 1].layerHeight;
          return bottomLeft !== bottomRight || bottomLeft !== topLeft || bottomLeft !== topRight;
      }
@@ -2991,6 +2996,26 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..aca20db2d9ec1c0e3546c002f49bfea2
 +        }
 +        else {
 +            gl.uniform1f(uniforms['u_dncEnabled'], 0);
++        }
++    }
++    /**
++     * OpenWar3: feed the terrain shaders the scene's model lights (MDX LITE omnis —
++     * render/worldOmni.ts; the same array the SD model shader reads off the scene).
++     */
++    setOmniUniforms(uniforms) {
++        const gl = this.viewer.gl;
++        const omni = this.worldScene.omniLights;
++        // A pass whose shader declares no omni uniforms answers undefined here — array
++        // uniform calls on an undefined location THROW, so bail out entirely.
++        if (uniforms['u_omniPos[0]'] === undefined) return;
++        if (omni && omni.count > 0) {
++            gl.uniform1f(uniforms['u_omniEnabled'], 1);
++            gl.uniform3fv(uniforms['u_omniPos[0]'], omni.positions);
++            gl.uniform3fv(uniforms['u_omniColor[0]'], omni.colors);
++            gl.uniform2fv(uniforms['u_omniAtten[0]'], omni.attenuations);
++        }
++        else {
++            gl.uniform1f(uniforms['u_omniEnabled'], 0);
 +        }
 +    }
 +    /**
@@ -3057,7 +3082,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..aca20db2d9ec1c0e3546c002f49bfea2
      /**
       * Is the tile at the given column and row water?
       */
-@@ -692,6 +1060,108 @@ class War3MapViewerMap {
+@@ -692,6 +1083,108 @@ class War3MapViewerMap {
          }
          return 0;
      }
@@ -3166,7 +3191,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..aca20db2d9ec1c0e3546c002f49bfea2
      /**
       * Get the ground texture of a corner, whether it's normal ground, a cliff, or a blighted corner.
       */
-@@ -730,17 +1200,37 @@ class War3MapViewerMap {
+@@ -730,17 +1223,37 @@ class War3MapViewerMap {
      applyModificationTable(dataMap, metadataMap, modificationTable) {
          for (const modificationObject of modificationTable.objects) {
              let row;
@@ -3209,10 +3234,10 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..aca20db2d9ec1c0e3546c002f49bfea2
                  const metadata = metadataMap.getRow(modification.id);
                  if (metadata) {
 diff --git a/dist/cjs/viewer/handlers/w3x/shaders/cliffs.frag.js b/dist/cjs/viewer/handlers/w3x/shaders/cliffs.frag.js
-index c2a27060799ff26b5c86ccedd0bedda2d6a54746..30d514402b5e0504e9b71ae7ea61f902aac45c22 100644
+index c2a27060799ff26b5c86ccedd0bedda2d6a54746..ae9a20b10ee82cfd508b6772aa069b166914d245 100644
 --- a/dist/cjs/viewer/handlers/w3x/shaders/cliffs.frag.js
 +++ b/dist/cjs/viewer/handlers/w3x/shaders/cliffs.frag.js
-@@ -9,6 +9,45 @@ ${precision_glsl_1.default}
+@@ -9,6 +9,54 @@ ${precision_glsl_1.default}
  uniform sampler2D u_texture1;
  uniform sampler2D u_texture2;
  
@@ -3246,6 +3271,15 @@ index c2a27060799ff26b5c86ccedd0bedda2d6a54746..30d514402b5e0504e9b71ae7ea61f902
 +uniform vec3 u_dncDiffuse;
 +uniform vec3 u_dncLightDir;
 +
++// OpenWar3: the map's model lights (MDX LITE omnis — a campfire, a lamppost; the same
++// array the SD model shader reads, render/worldOmni.ts). This is the warm pool a lamp
++// paints on the ground: additive over the day/night base, so it lifts the night instead
++// of only re-tinting it.
++uniform float u_omniEnabled;
++uniform vec3 u_omniPos[8]; // world space, from the light NODE (they animate)
++uniform vec3 u_omniColor[8]; // Color × Intensity; unused slots are black
++uniform vec2 u_omniAtten[8]; // (AttenuationStart, AttenuationEnd)
++
 +// OpenWar3: linear distance fog (environment haze; src/render/fog.ts). Reuses the
 +// cliff's world position (v_position). Distinct from the fog-of-war mask above.
 +uniform float u_distFogEnabled;
@@ -3258,7 +3292,7 @@ index c2a27060799ff26b5c86ccedd0bedda2d6a54746..30d514402b5e0504e9b71ae7ea61f902
  varying vec3 v_normal;
  varying vec2 v_uv;
  varying float v_texture;
-@@ -35,6 +74,31 @@ void main() {
+@@ -35,6 +83,44 @@ void main() {
  
    // color *= clamp(dot(normal, lightDirection) + 0.45, 0.1, 1.0);
  
@@ -3266,6 +3300,19 @@ index c2a27060799ff26b5c86ccedd0bedda2d6a54746..30d514402b5e0504e9b71ae7ea61f902
 +  if (u_dncEnabled > 0.5) {
 +    float ndotl = max(dot(normalize(v_normal), u_dncLightDir), 0.0);
 +    color.rgb *= clamp(u_dncAmbient + u_dncDiffuse * ndotl, 0.0, 1.0);
++  }
++
++  // OpenWar3: model-light pools (see the u_omni* block). Additive over the day/night
++  // base, clamped per light so an intensity-10 lamp saturates the pool instead of the
++  // whole map — which is what the real client shows next to a lamp.
++  if (u_omniEnabled > 0.5) {
++    for (int i = 0; i < 8; i++) {
++      vec3 toLight = u_omniPos[i] - v_position;
++      float dist = length(toLight);
++      float atten = clamp((u_omniAtten[i].y - dist) / max(u_omniAtten[i].y - u_omniAtten[i].x, 0.001), 0.0, 1.0);
++      float ndotl = max(dot(normalize(v_normal), toLight / max(dist, 0.001)), 0.0);
++      color.rgb += min(u_omniColor[i] * (atten * ndotl), vec3(1.0));
++    }
 +  }
 +
 +  // OpenWar3: atmospheric distance fog (haze), before the fog-of-war dimming.
@@ -3368,10 +3415,10 @@ index 797d91b4335ebc7297fff0e109c98443bd35487c..66ee7f84ff8738975cd9397a03854f18
    v_texture = a_instanceTexture;
    v_position = a_position + vec3(a_instancePosition.xy, a_instancePosition.z + height * 128.0);
 diff --git a/dist/cjs/viewer/handlers/w3x/shaders/ground.frag.js b/dist/cjs/viewer/handlers/w3x/shaders/ground.frag.js
-index 70449d8d52f46ac83662d302c94dcee8e29147e7..2937a00fba90d58c7ddbc23bda774d13327aef38 100644
+index 70449d8d52f46ac83662d302c94dcee8e29147e7..4b3efd2231fb05b1fbe24313034fdddbff5fd7e0 100644
 --- a/dist/cjs/viewer/handlers/w3x/shaders/ground.frag.js
 +++ b/dist/cjs/viewer/handlers/w3x/shaders/ground.frag.js
-@@ -6,11 +6,36 @@ ${precision_glsl_1.default}
+@@ -6,11 +6,45 @@ ${precision_glsl_1.default}
  
  uniform sampler2D u_tilesets[15];
  
@@ -3385,6 +3432,15 @@ index 70449d8d52f46ac83662d302c94dcee8e29147e7..2937a00fba90d58c7ddbc23bda774d13
 +uniform vec3 u_dncAmbient;
 +uniform vec3 u_dncDiffuse;
 +uniform vec3 u_dncLightDir;
++
++// OpenWar3: the map's model lights (MDX LITE omnis — a campfire, a lamppost; the same
++// array the SD model shader reads, render/worldOmni.ts). This is the warm pool a lamp
++// paints on the ground: additive over the day/night base, so it lifts the night instead
++// of only re-tinting it.
++uniform float u_omniEnabled;
++uniform vec3 u_omniPos[8]; // world space, from the light NODE (they animate)
++uniform vec3 u_omniColor[8]; // Color × Intensity; unused slots are black
++uniform vec2 u_omniAtten[8]; // (AttenuationStart, AttenuationEnd)
 +
 +// OpenWar3: linear distance fog (the WC3 environment haze; src/render/fog.ts). Set on
 +// the map render from the w3i fog settings. Distinct from fog-of-war (u_fog*).
@@ -3409,7 +3465,7 @@ index 70449d8d52f46ac83662d302c94dcee8e29147e7..2937a00fba90d58c7ddbc23bda774d13
  
  vec4 sample(float tileset, vec2 uv) {
    // 1.0 - 1.0 == 0.0 is not always true.
-@@ -70,9 +95,16 @@ void main() {
+@@ -70,9 +104,29 @@ void main() {
      color = blend(color, v_tilesets[3], v_uv[3]);
    }
  
@@ -3421,6 +3477,19 @@ index 70449d8d52f46ac83662d302c94dcee8e29147e7..2937a00fba90d58c7ddbc23bda774d13
 +  if (u_dncEnabled > 0.5) {
 +    float ndotl = max(dot(normalize(v_normal), u_dncLightDir), 0.0);
 +    color.rgb *= clamp(u_dncAmbient + u_dncDiffuse * ndotl, 0.0, 1.0);
++  }
++
++  // OpenWar3: model-light pools (see the u_omni* block). Additive over the day/night
++  // base, clamped per light so an intensity-10 lamp saturates the pool instead of the
++  // whole map — which is what the real client shows next to a lamp.
++  if (u_omniEnabled > 0.5) {
++    for (int i = 0; i < 8; i++) {
++      vec3 toLight = u_omniPos[i] - v_dfPos;
++      float dist = length(toLight);
++      float atten = clamp((u_omniAtten[i].y - dist) / max(u_omniAtten[i].y - u_omniAtten[i].x, 0.001), 0.0, 1.0);
++      float ndotl = max(dot(normalize(v_normal), toLight / max(dist, 0.001)), 0.0);
++      color.rgb += min(u_omniColor[i] * (atten * ndotl), vec3(1.0));
++    }
 +  }
  
 -  gl_FragColor = vec4(color.rgb, 1.0);
@@ -3467,10 +3536,10 @@ index 26a5b4c8758bfb80c62f458fbc4a85293c18060b..04cc367537276e961570be1c82849624
      v_uv[0] = vec2(0.0);
      v_uv[1] = vec2(0.0);
 diff --git a/dist/cjs/viewer/handlers/w3x/shaders/water.frag.js b/dist/cjs/viewer/handlers/w3x/shaders/water.frag.js
-index 6f31791753b2bf146060b8adfb44767cc468be55..b1bb5154a032f74d93e0b7fe4e876a7d63f9495f 100644
+index 6f31791753b2bf146060b8adfb44767cc468be55..6ec4468e14c073b364214c13fd597e5773d0079f 100644
 --- a/dist/cjs/viewer/handlers/w3x/shaders/water.frag.js
 +++ b/dist/cjs/viewer/handlers/w3x/shaders/water.frag.js
-@@ -6,11 +6,58 @@ ${precision_glsl_1.default}
+@@ -6,11 +6,80 @@ ${precision_glsl_1.default}
  
  uniform sampler2D u_waterTexture;
  
@@ -3481,6 +3550,15 @@ index 6f31791753b2bf146060b8adfb44767cc468be55..b1bb5154a032f74d93e0b7fe4e876a7d
 +uniform vec3 u_dncAmbient;
 +uniform vec3 u_dncDiffuse;
 +uniform vec3 u_dncLightDir;
++
++// OpenWar3: the map's model lights (MDX LITE omnis — a campfire, a lamppost; the same
++// array the SD model shader reads, render/worldOmni.ts). This is the warm pool a lamp
++// paints on the ground: additive over the day/night base, so it lifts the night instead
++// of only re-tinting it.
++uniform float u_omniEnabled;
++uniform vec3 u_omniPos[8]; // world space, from the light NODE (they animate)
++uniform vec3 u_omniColor[8]; // Color × Intensity; unused slots are black
++uniform vec2 u_omniAtten[8]; // (AttenuationStart, AttenuationEnd)
 +
 +// OpenWar3: linear distance fog (environment haze; src/render/fog.ts).
 +uniform float u_distFogEnabled;
@@ -3510,6 +3588,19 @@ index 6f31791753b2bf146060b8adfb44767cc468be55..b1bb5154a032f74d93e0b7fe4e876a7d
 +
 +  if (u_dncEnabled > 0.5) {
 +    color.rgb *= clamp(u_dncAmbient + u_dncDiffuse * max(u_dncLightDir.z, 0.0), 0.0, 1.0);
++  }
++
++  // OpenWar3: model-light pools (see the u_omni* block). Additive over the day/night
++  // base, clamped per light so an intensity-10 lamp saturates the pool instead of the
++  // whole map — which is what the real client shows next to a lamp.
++  if (u_omniEnabled > 0.5) {
++    for (int i = 0; i < 8; i++) {
++      vec3 toLight = u_omniPos[i] - v_dfPos;
++      float dist = length(toLight);
++      float atten = clamp((u_omniAtten[i].y - dist) / max(u_omniAtten[i].y - u_omniAtten[i].x, 0.001), 0.0, 1.0);
++      float ndotl = max(toLight.z / max(dist, 0.001), 0.0); // water is a flat plane — straight up
++      color.rgb += min(u_omniColor[i] * (atten * ndotl), vec3(1.0));
++    }
 +  }
 +
 +  // Atmospheric haze — mix rgb only (keep the shore-fade alpha intact).
