@@ -2473,7 +2473,7 @@ index 49733805785c0ef269901d8928e47a953ada93a9..f15149f33f353822f4cb73eaf85eb727
    gl_Position = u_VP * vec4(position, 1.0);
  }
 diff --git a/dist/cjs/viewer/handlers/w3x/map.js b/dist/cjs/viewer/handlers/w3x/map.js
-index e4c8ea760e92653ef6423bd34f9111d0b062a901..ba98fe34222b3ce6e480f42ce2d3d76925392d64 100644
+index e4c8ea760e92653ef6423bd34f9111d0b062a901..c219a02b73f6bdf819510280194743fe086aa0f8 100644
 --- a/dist/cjs/viewer/handlers/w3x/map.js
 +++ b/dist/cjs/viewer/handlers/w3x/map.js
 @@ -16,6 +16,41 @@ const file_3 = require("../../../parsers/w3x/doo/file");
@@ -2870,7 +2870,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..ba98fe34222b3ce6e480f42ce2d3d769
          this.waterBuffer = gl.createBuffer();
          gl.bindBuffer(gl.ARRAY_BUFFER, this.waterBuffer);
          gl.bufferData(gl.ARRAY_BUFFER, waterFlags, gl.STATIC_DRAW);
-@@ -358,7 +574,54 @@ class War3MapViewerMap {
+@@ -358,7 +574,70 @@ class War3MapViewerMap {
                          }
                          promise.then((model) => {
                              if (model) {
@@ -2901,11 +2901,27 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..ba98fe34222b3ce6e480f42ce2d3d769
 +                                // columns, blue inherited for B) renders blue-grey.
 +                                const varIdx = Math.min(doodad.variation + 1, 99);
 +                                const suf = String(varIdx).padStart(2, '0');
-+                                const cr = row.string(`vertR${suf}`);
-+                                const cg = row.string(`vertG${suf}`);
-+                                const cb = row.string(`vertB${suf}`);
-+                                const chan = (v) => v !== undefined && v !== '' ? Number(v) / 255 : 0;
-+                                instance.instance.setVertexColor([chan(cr), chan(cg), chan(cb), 1]);
++                                // The engine branches by object KIND before reading tint
++                                // (CDoodads::GetModelVertexColor): DESTRUCTIBLES go to
++                                // DestructableDB::ModelColor — DestructableData carries no
++                                // per-variation tint columns at all, so their default is
++                                // the WHITE — while doodads go to the vert%02d columns
++                                // with the black default below. DSIII's login hangs its
++                                // clouds (B000) and stars (B001) as destructibles; tinting
++                                // them by the doodad rule blackened both. Custom ids name
++                                // the kind (destructables B0xx, doodads D0xx) and the
++                                // prefix is the only kind marker our merged row carries.
++                                const kindChar = String.fromCharCode(...doodad.id)[0];
++                                if (kindChar === 'B') {
++                                    instance.instance.setVertexColor([1, 1, 1, 1]);
++                                }
++                                else {
++                                    const cr = row.string(`vertR${suf}`);
++                                    const cg = row.string(`vertG${suf}`);
++                                    const cb = row.string(`vertB${suf}`);
++                                    const chan = (v) => v !== undefined && v !== '' ? Number(v) / 255 : 0;
++                                    instance.instance.setVertexColor([chan(cr), chan(cg), chan(cb), 1]);
++                                }
 +                                // OpenWar3: destructibles override their model's
 +                                // replaceable texture per row (texID/texFile) — this is
 +                                // how one LordaeronTree model shows summer, fall, snow
@@ -2926,7 +2942,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..ba98fe34222b3ce6e480f42ce2d3d769
                              }
                          });
                      }
-@@ -485,6 +748,31 @@ class War3MapViewerMap {
+@@ -485,6 +764,31 @@ class War3MapViewerMap {
              worldScene.renderTranslucent();
          }
      }
@@ -2958,7 +2974,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..ba98fe34222b3ce6e480f42ce2d3d769
      renderGround() {
          if (this.terrainReady) {
              const gl = this.viewer.gl;
-@@ -503,6 +791,9 @@ class War3MapViewerMap {
+@@ -503,6 +807,9 @@ class War3MapViewerMap {
              gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
              webgl.useShader(shader);
              gl.uniformMatrix4fv(uniforms['u_VP'], false, this.worldScene.camera.viewProjectionMatrix);
@@ -2968,7 +2984,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..ba98fe34222b3ce6e480f42ce2d3d769
              gl.uniform2fv(uniforms['u_offset'], this.centerOffset);
              gl.uniform2f(uniforms['u_size'], this.columns, this.rows);
              gl.uniform1i(uniforms['u_heightMap'], 15);
-@@ -527,7 +818,19 @@ class War3MapViewerMap {
+@@ -527,7 +834,19 @@ class War3MapViewerMap {
                  gl.uniform1i(uniforms[`u_tilesets[${i}]`], i);
                  webgl.bindTexture(tilesetTextures[i], i);
              }
@@ -2989,7 +3005,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..ba98fe34222b3ce6e480f42ce2d3d769
              if (tilesetCount > 15) {
                  gl.uniform1f(uniforms['u_baseTileset'], 15);
                  for (let i = 0, l = tilesetCount - 15; i < l; i++) {
-@@ -535,7 +838,7 @@ class War3MapViewerMap {
+@@ -535,7 +854,7 @@ class War3MapViewerMap {
                      gl.uniform1f(uniforms[`u_extended[${i}]`], isExtended);
                      webgl.bindTexture(tilesetTextures[i + 15], i);
                  }
@@ -2998,7 +3014,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..ba98fe34222b3ce6e480f42ce2d3d769
              }
              instancedArrays.vertexAttribDivisorANGLE(texturesAttrib, 0);
              instancedArrays.vertexAttribDivisorANGLE(variationsAttrib, 0);
-@@ -558,11 +861,18 @@ class War3MapViewerMap {
+@@ -558,11 +877,18 @@ class War3MapViewerMap {
              gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
              webgl.useShader(shader);
              gl.uniformMatrix4fv(uniforms['u_VP'], false, this.worldScene.camera.viewProjectionMatrix);
@@ -3017,7 +3033,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..ba98fe34222b3ce6e480f42ce2d3d769
              gl.uniform1f(uniforms['u_offsetHeight'], this.waterHeightOffset);
              gl.uniform4fv(uniforms['u_maxDeepColor'], this.maxDeepColor);
              gl.uniform4fv(uniforms['u_minDeepColor'], this.minDeepColor);
-@@ -582,7 +892,14 @@ class War3MapViewerMap {
+@@ -582,7 +908,14 @@ class War3MapViewerMap {
              gl.vertexAttribPointer(isWaterAttrib, 1, gl.UNSIGNED_BYTE, false, 1, 0);
              instancedArrays.vertexAttribDivisorANGLE(isWaterAttrib, 1);
              gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.faceBuffer);
@@ -3033,7 +3049,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..ba98fe34222b3ce6e480f42ce2d3d769
              instancedArrays.vertexAttribDivisorANGLE(isWaterAttrib, 0);
              instancedArrays.vertexAttribDivisorANGLE(instanceAttrib, 0);
          }
-@@ -599,6 +916,9 @@ class War3MapViewerMap {
+@@ -599,6 +932,9 @@ class War3MapViewerMap {
              gl.disable(gl.BLEND);
              shader.use();
              gl.uniformMatrix4fv(uniforms['u_VP'], false, this.worldScene.camera.viewProjectionMatrix);
@@ -3043,7 +3059,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..ba98fe34222b3ce6e480f42ce2d3d769
              gl.uniform1i(uniforms['u_heightMap'], 0);
              gl.uniform2f(uniforms['u_pixel'], 1 / (this.columns + 1), 1 / (this.rows + 1));
              gl.uniform2fv(uniforms['u_centerOffset'], this.centerOffset);
-@@ -612,6 +932,23 @@ class War3MapViewerMap {
+@@ -612,6 +948,23 @@ class War3MapViewerMap {
                  gl.activeTexture(gl.TEXTURE2);
                  gl.bindTexture(gl.TEXTURE_2D, this.cliffTextures[1].webglResource);
              }
@@ -3067,7 +3083,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..ba98fe34222b3ce6e480f42ce2d3d769
              // Set instanced attributes.
              if (!vertexArrayObject) {
                  instancedArrays.vertexAttribDivisorANGLE(attribs['a_instancePosition'], 1);
-@@ -671,6 +1008,106 @@ class War3MapViewerMap {
+@@ -671,6 +1024,106 @@ class War3MapViewerMap {
          const topRight = corners[row + 1][column + 1].layerHeight;
          return bottomLeft !== bottomRight || bottomLeft !== topLeft || bottomLeft !== topRight;
      }
@@ -3174,7 +3190,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..ba98fe34222b3ce6e480f42ce2d3d769
      /**
       * Is the tile at the given column and row water?
       */
-@@ -692,6 +1129,108 @@ class War3MapViewerMap {
+@@ -692,6 +1145,108 @@ class War3MapViewerMap {
          }
          return 0;
      }
@@ -3283,7 +3299,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..ba98fe34222b3ce6e480f42ce2d3d769
      /**
       * Get the ground texture of a corner, whether it's normal ground, a cliff, or a blighted corner.
       */
-@@ -730,17 +1269,37 @@ class War3MapViewerMap {
+@@ -730,17 +1285,37 @@ class War3MapViewerMap {
      applyModificationTable(dataMap, metadataMap, modificationTable) {
          for (const modificationObject of modificationTable.objects) {
              let row;
