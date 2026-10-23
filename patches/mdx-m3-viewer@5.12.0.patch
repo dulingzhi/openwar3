@@ -2463,7 +2463,7 @@ index 49733805785c0ef269901d8928e47a953ada93a9..f15149f33f353822f4cb73eaf85eb727
    gl_Position = u_VP * vec4(position, 1.0);
  }
 diff --git a/dist/cjs/viewer/handlers/w3x/map.js b/dist/cjs/viewer/handlers/w3x/map.js
-index e4c8ea760e92653ef6423bd34f9111d0b062a901..f453481857c884f04ae49c9cba664e81fa38b6e0 100644
+index e4c8ea760e92653ef6423bd34f9111d0b062a901..28beebf2e95fdbf481198c1c0c1d7b4fd87558a5 100644
 --- a/dist/cjs/viewer/handlers/w3x/map.js
 +++ b/dist/cjs/viewer/handlers/w3x/map.js
 @@ -16,6 +16,41 @@ const file_3 = require("../../../parsers/w3x/doo/file");
@@ -2860,42 +2860,50 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..f453481857c884f04ae49c9cba664e81
          this.waterBuffer = gl.createBuffer();
          gl.bindBuffer(gl.ARRAY_BUFFER, this.waterBuffer);
          gl.bufferData(gl.ARRAY_BUFFER, waterFlags, gl.STATIC_DRAW);
-@@ -358,7 +574,71 @@ class War3MapViewerMap {
+@@ -358,7 +574,79 @@ class War3MapViewerMap {
                          }
                          promise.then((model) => {
                              if (model) {
 -                                this.doodads.push(new doodad_1.default(this, model, row, doodad));
 +                                const instance = new doodad_1.default(this, model, row, doodad);
++                                // OpenWar3: the raw .doo flags ride along — mapViewer snaps
++                                // non-0x4 doodads to the terrain height (the engine's
++                                // CWorldObjects::LoadObject does the same via ComputeHeight).
++                                instance.ow3DooFlags = doodad.flags;
 +                                this.doodads.push(instance);
-+                                // OpenWar3: the type row's per-VARIATION vertex tint
++                                // OpenWar3: the type row's per-variation vertex tint
 +                                // (DoodadData's vertR01..vertR10 columns, 0-255). Game.dll
-+                                // composes the column with the variation itself — the
-+                                // format string "vertR%02d" (found in the binary) — and
-+                                // DSIII's real login shows what that means: the three lamp
-+                                // halos placed at variation 0 render UNTINTED (the golden
-+                                // lantern; there is no vertR00 column), while the
-+                                // variation-1 halo behind the lamp wears the w3d's
-+                                // (128,128,255) as the blue haze in the sky band. Applying
-+                                // variation 1's tint to every instance, regardless of its
-+                                // variation, painted that halo saturated blue over the
-+                                // lantern and turned the lamp tube pink. So: variation 0 →
-+                                // untinted; variation 1 → vertR01; variation N → vertR0N.
-+                                // The w3d mod ids dvR1/dvG1/dvB1 ARE the variation-1 tint
-+                                // (the trailing 1 is the variation), but which CELL a mod
-+                                // landed in depends on the mounted meta (TFT routes it to
-+                                // vertR01, the 1.27 patch's to a plain vertR) — so
-+                                // variation 1 falls back to that meta-routed cell when the
-+                                // numbered one is absent. Missing cells stay white: only a
-+                                // cell actually SET is read, because MappedDataRow.number()
-+                                // answers 0 for an absent cell and a black-tinted doodad is
-+                                // worse than a white one.
++                                // composes the column as "vertR%02d" (found in the binary);
++                                // WHICH variation each column belongs to follows the type's
++                                // declared variation count, and DSIII's real login pins the
++                                // whole rule down: the moon D00Z (its row declares NO
++                                // dvar — a single-variation type) renders blue-tinted on
++                                // the real client, while the lamp halos D00D (dvar=7) show
++                                // the (128,128,255) tint ONLY on the one instance placed
++                                // at variation 1 — the three at variation 0 are untinted
++                                // (the lantern stays pure gold, B=54 rules out any white
++                                // or blue wash). So: a multi-variation type reads the
++                                // column matching the placed variation (0 → vertR00, no
++                                // such column → untinted); a single-variation type has
++                                // only vertR01 and every instance wears it. The w3d mod
++                                // ids dvR1/dvG1/dvB1 are variation 1's tint; which CELL
++                                // that mod landed in depends on the mounted meta (TFT →
++                                // vertR01, the 1.27 patch → a plain vertR), so the
++                                // single-variation read falls back to the meta-routed
++                                // cell. Missing cells stay white: only a cell actually
++                                // SET is read — MappedDataRow.number() answers 0 for an
++                                // absent cell and a black-tinted doodad is worse than a
++                                // white one.
 +                                const chan = (v) => v !== undefined && v !== '' ? Number(v) / 255 : 1;
-+                                if (doodad.variation > 0) {
-+                                    const suf = String(Math.min(doodad.variation, 99)).padStart(2, '0');
++                                {
++                                    const numVar = row.number('numVar');
++                                    const suf = numVar > 1
++                                        ? String(Math.min(doodad.variation, 99)).padStart(2, '0')
++                                        : '01';
 +                                    let r = row.string(`vertR${suf}`);
 +                                    let g = row.string(`vertG${suf}`);
 +                                    let b = row.string(`vertB${suf}`);
-+                                    if ((r === undefined || r === '') && (g === undefined || g === '') && (b === undefined || b === '') && doodad.variation === 1) {
++                                    if (numVar <= 1 && (r === undefined || r === '') && (g === undefined || g === '') && (b === undefined || b === '')) {
 +                                        const tintField = (id) => {
 +                                            const metaRow = this.viewer.doodadMetaData.getRow(id);
 +                                            return metaRow ? metaRow.string('field') : null;
@@ -2933,7 +2941,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..f453481857c884f04ae49c9cba664e81
                              }
                          });
                      }
-@@ -485,6 +765,31 @@ class War3MapViewerMap {
+@@ -485,6 +773,31 @@ class War3MapViewerMap {
              worldScene.renderTranslucent();
          }
      }
@@ -2965,7 +2973,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..f453481857c884f04ae49c9cba664e81
      renderGround() {
          if (this.terrainReady) {
              const gl = this.viewer.gl;
-@@ -503,6 +808,9 @@ class War3MapViewerMap {
+@@ -503,6 +816,9 @@ class War3MapViewerMap {
              gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
              webgl.useShader(shader);
              gl.uniformMatrix4fv(uniforms['u_VP'], false, this.worldScene.camera.viewProjectionMatrix);
@@ -2975,7 +2983,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..f453481857c884f04ae49c9cba664e81
              gl.uniform2fv(uniforms['u_offset'], this.centerOffset);
              gl.uniform2f(uniforms['u_size'], this.columns, this.rows);
              gl.uniform1i(uniforms['u_heightMap'], 15);
-@@ -527,7 +835,19 @@ class War3MapViewerMap {
+@@ -527,7 +843,19 @@ class War3MapViewerMap {
                  gl.uniform1i(uniforms[`u_tilesets[${i}]`], i);
                  webgl.bindTexture(tilesetTextures[i], i);
              }
@@ -2996,7 +3004,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..f453481857c884f04ae49c9cba664e81
              if (tilesetCount > 15) {
                  gl.uniform1f(uniforms['u_baseTileset'], 15);
                  for (let i = 0, l = tilesetCount - 15; i < l; i++) {
-@@ -535,7 +855,7 @@ class War3MapViewerMap {
+@@ -535,7 +863,7 @@ class War3MapViewerMap {
                      gl.uniform1f(uniforms[`u_extended[${i}]`], isExtended);
                      webgl.bindTexture(tilesetTextures[i + 15], i);
                  }
@@ -3005,7 +3013,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..f453481857c884f04ae49c9cba664e81
              }
              instancedArrays.vertexAttribDivisorANGLE(texturesAttrib, 0);
              instancedArrays.vertexAttribDivisorANGLE(variationsAttrib, 0);
-@@ -558,11 +878,18 @@ class War3MapViewerMap {
+@@ -558,11 +886,18 @@ class War3MapViewerMap {
              gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
              webgl.useShader(shader);
              gl.uniformMatrix4fv(uniforms['u_VP'], false, this.worldScene.camera.viewProjectionMatrix);
@@ -3024,7 +3032,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..f453481857c884f04ae49c9cba664e81
              gl.uniform1f(uniforms['u_offsetHeight'], this.waterHeightOffset);
              gl.uniform4fv(uniforms['u_maxDeepColor'], this.maxDeepColor);
              gl.uniform4fv(uniforms['u_minDeepColor'], this.minDeepColor);
-@@ -582,7 +909,14 @@ class War3MapViewerMap {
+@@ -582,7 +917,14 @@ class War3MapViewerMap {
              gl.vertexAttribPointer(isWaterAttrib, 1, gl.UNSIGNED_BYTE, false, 1, 0);
              instancedArrays.vertexAttribDivisorANGLE(isWaterAttrib, 1);
              gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.faceBuffer);
@@ -3040,7 +3048,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..f453481857c884f04ae49c9cba664e81
              instancedArrays.vertexAttribDivisorANGLE(isWaterAttrib, 0);
              instancedArrays.vertexAttribDivisorANGLE(instanceAttrib, 0);
          }
-@@ -599,6 +933,9 @@ class War3MapViewerMap {
+@@ -599,6 +941,9 @@ class War3MapViewerMap {
              gl.disable(gl.BLEND);
              shader.use();
              gl.uniformMatrix4fv(uniforms['u_VP'], false, this.worldScene.camera.viewProjectionMatrix);
@@ -3050,7 +3058,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..f453481857c884f04ae49c9cba664e81
              gl.uniform1i(uniforms['u_heightMap'], 0);
              gl.uniform2f(uniforms['u_pixel'], 1 / (this.columns + 1), 1 / (this.rows + 1));
              gl.uniform2fv(uniforms['u_centerOffset'], this.centerOffset);
-@@ -612,6 +949,23 @@ class War3MapViewerMap {
+@@ -612,6 +957,23 @@ class War3MapViewerMap {
                  gl.activeTexture(gl.TEXTURE2);
                  gl.bindTexture(gl.TEXTURE_2D, this.cliffTextures[1].webglResource);
              }
@@ -3074,7 +3082,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..f453481857c884f04ae49c9cba664e81
              // Set instanced attributes.
              if (!vertexArrayObject) {
                  instancedArrays.vertexAttribDivisorANGLE(attribs['a_instancePosition'], 1);
-@@ -671,6 +1025,106 @@ class War3MapViewerMap {
+@@ -671,6 +1033,106 @@ class War3MapViewerMap {
          const topRight = corners[row + 1][column + 1].layerHeight;
          return bottomLeft !== bottomRight || bottomLeft !== topLeft || bottomLeft !== topRight;
      }
@@ -3181,7 +3189,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..f453481857c884f04ae49c9cba664e81
      /**
       * Is the tile at the given column and row water?
       */
-@@ -692,6 +1146,108 @@ class War3MapViewerMap {
+@@ -692,6 +1154,108 @@ class War3MapViewerMap {
          }
          return 0;
      }
@@ -3290,7 +3298,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..f453481857c884f04ae49c9cba664e81
      /**
       * Get the ground texture of a corner, whether it's normal ground, a cliff, or a blighted corner.
       */
-@@ -730,17 +1286,37 @@ class War3MapViewerMap {
+@@ -730,17 +1294,37 @@ class War3MapViewerMap {
      applyModificationTable(dataMap, metadataMap, modificationTable) {
          for (const modificationObject of modificationTable.objects) {
              let row;
