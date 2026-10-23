@@ -1359,9 +1359,6 @@ export class MapViewerScene {
   private regionLabelBox: HTMLDivElement | null = null; // DOM container for the name labels
   private regionLabelPool: HTMLDivElement[] = []; // reused label elements
   private fogAccum = 0; // ms since the last fog resample (throttle)
-  /** Doodad ground-snap scan: the .doo index the snap pass has processed up to (doodads
-   *  stream in over the whole load, so the pass walks the array's new tail each frame). */
-  private snapScanCount = 0;
   private removedWidgets = new Set<HideableWidget>(); // felled trees / mined-out mines — stay gone, never re-fogged
   /** Gold-mine widgets hidden UNDER an Entangled Gold Mine, keyed by that building's sim id.
    *  Unlike `removedWidgets` these come back: knock the roots down and the mine is a mine
@@ -2063,7 +2060,6 @@ export class MapViewerScene {
     // Drop the previous map's scene so reloading doesn't stack renders.
     const prev = this.viewer.map?.worldScene;
     if (prev) this.viewer.removeScene(prev);
-    this.snapScanCount = 0; // the next map's doodads stream in fresh
     this.disposeFog(); // drop the old map's fog overlay + un-hide its doodads
     this.splats?.dispose();
     this.splats = null;
@@ -15568,7 +15564,6 @@ export class MapViewerScene {
       // Fog of war: build it once the map is ready, resample a few times a second,
       // and draw it as our own pass over the freshly-rendered world.
       perfLog.begin("fog");
-      this.snapDoodadsToGround();
       this.ensureFog();
       if (this.fog) {
         this.fogAccum += dt;
@@ -16154,35 +16149,6 @@ export class MapViewerScene {
   // Building shadows have no size field in the data (unlike units' shadowW/H), so we size
   // them from the pathing footprint and stretch a touch past the base — tuned live.
   private static readonly BUILDING_SHADOW_SCALE = 1.25;
-
-  /** Doodads whose .doo flags lack 0x4 sit ON the terrain: the engine recomputes their z
-   *  from the ground under them (CWorldObjects::LoadObject calls ComputeHeight for them;
-   *  only flag-0x4 placements — bridges — keep the file's absolute z, IDA). Ours stream in
-   *  at the file z, so snap each new one onto the terrain once the sampler exists. The
-   *  scan walks the doodads array's new tail per frame until the stream ends; widgets the
-   *  patch spawned before this shipped carry no flags and are left where they are. */
-  private snapDoodadsToGround(): void {
-    const map = this.viewer.map;
-    const sampler = this.heightSampler;
-    if (!map || !sampler) return;
-    const doodads = map.doodads as unknown as Array<{
-      instance?: {
-        localLocation?: Float32Array;
-        ow3DooFlags?: number;
-        move(loc: ArrayLike<number>): void;
-      };
-    }>;
-    if (this.snapScanCount >= doodads.length) return; // nothing new streamed in
-    for (let i = this.snapScanCount; i < doodads.length; i++) {
-      const inst = doodads[i]?.instance;
-      const flags = inst?.ow3DooFlags;
-      const loc = inst?.localLocation;
-      if (inst?.move && loc && flags !== undefined && !(flags & 0x4)) {
-        inst.move([loc[0], loc[1], sampler(loc[0], loc[1])]);
-      }
-    }
-    this.snapScanCount = doodads.length;
-  }
 
   private fogWidgets(vision: VisionMap): void {
     const map = this.viewer.map;
