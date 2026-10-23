@@ -2473,7 +2473,7 @@ index 49733805785c0ef269901d8928e47a953ada93a9..f15149f33f353822f4cb73eaf85eb727
    gl_Position = u_VP * vec4(position, 1.0);
  }
 diff --git a/dist/cjs/viewer/handlers/w3x/map.js b/dist/cjs/viewer/handlers/w3x/map.js
-index e4c8ea760e92653ef6423bd34f9111d0b062a901..e48cb6adc06d5179d3c7be591fc2a86da603b9dc 100644
+index e4c8ea760e92653ef6423bd34f9111d0b062a901..48e77f8ffa8b37c03e12b4ff8992b9a77e9f5220 100644
 --- a/dist/cjs/viewer/handlers/w3x/map.js
 +++ b/dist/cjs/viewer/handlers/w3x/map.js
 @@ -16,6 +16,41 @@ const file_3 = require("../../../parsers/w3x/doo/file");
@@ -2543,7 +2543,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..e48cb6adc06d5179d3c7be591fc2a86d
          this.heightMap = null;
          this.waterHeightMap = null;
          this.cliffHeightMap = null;
-@@ -85,6 +131,30 @@ class War3MapViewerMap {
+@@ -85,6 +131,42 @@ class War3MapViewerMap {
          this.applyModificationFile(viewer.doodadsData, viewer.destructableMetaData, modifications.w3b);
          this.applyModificationFile(viewer.unitsData, viewer.unitMetaData, modifications.w3u);
          this.applyModificationFile(viewer.unitsData, viewer.unitMetaData, modifications.w3t);
@@ -2560,6 +2560,18 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..e48cb6adc06d5179d3c7be591fc2a86d
 +        // The viewer built doodadsData from the INSTALL's SLKs (viewer.js); the map's own
 +        // tables must merge over them exactly as the w3d/w3b modifications above do — or every
 +        // row only the map defines is an "Unknown doodad ID" and never spawns. MappedData.load
++        // OpenWar3: the ENGINE's object tables, snapshotted BEFORE the map's own
++        // TEXT SLKs merge over them below.  These are the rows the engine's colour
++        // chooser reads: the install's Doodads.slk + Units\DestructableData.slk plus
++        // the map's war3map.w3d / war3map.w3b objects.  A row that exists ONLY in the
++        // map's TEXT SLK is an id the engine does not know, and the engine's answer
++        // for an unknown id is WHITE (Game.dll's CDoodads colour chooser, IDA: the
++        // unknown-id branch returns 0xFFFFFFFF).
++        this.ow3EngineRows = new Map();
++        for (const [id, r] of Object.entries(viewer.doodadsData.map)) {
++            this.ow3EngineRows.set(id, Object.assign({}, r.map));
++        }
++
 +        // merges per cell, so a map row wins the cells it names and install-only rows stay.
 +        for (const slkPath of ['Units\\DestructableData.slk', 'Doodads\\Doodads.slk']) {
 +            const slkFile = this.map.get(slkPath);
@@ -2574,7 +2586,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..e48cb6adc06d5179d3c7be591fc2a86d
          this.loadDoodadsAndDestructibles();
          this.loadUnitsAndItems();
      }
-@@ -109,9 +179,15 @@ class War3MapViewerMap {
+@@ -109,9 +191,15 @@ class War3MapViewerMap {
          }
          this.solverParams.tileset = parser.tileset.toLowerCase();
          this.buildVersion = parser.getBuildVersion();
@@ -2593,7 +2605,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..e48cb6adc06d5179d3c7be591fc2a86d
      }
      async loadTerrainCliffsAndWater() {
          const mpqFile = this.map.get('war3map.w3e');
-@@ -136,12 +212,32 @@ class War3MapViewerMap {
+@@ -136,12 +224,32 @@ class War3MapViewerMap {
          // Override the grid based on the map.
          this.worldScene.grid = new grid_1.default(centerOffset[0], centerOffset[1], mapSize[0] * 128 - 128, mapSize[1] * 128 - 128, 16 * 128, 16 * 128);
          const texturesExt = this.solverParams.reforged ? '.dds' : '.blp';
@@ -2628,7 +2640,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..e48cb6adc06d5179d3c7be591fc2a86d
              this.tilesets.push(row);
              tilesetTextures.push(this.load(`${row.string('dir')}\\${row.string('file')}${texturesExt}`));
          }
-@@ -165,10 +261,19 @@ class War3MapViewerMap {
+@@ -165,10 +273,19 @@ class War3MapViewerMap {
              Y: 'Village',
              Z: 'Ruins',
          };
@@ -2650,7 +2662,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..e48cb6adc06d5179d3c7be591fc2a86d
              this.cliffTilesets.push(row);
              cliffTextures.push(this.load(`${row.string('texDir')}\\${row.string('texFile')}${texturesExt}`));
          }
-@@ -199,6 +304,99 @@ class War3MapViewerMap {
+@@ -199,6 +316,99 @@ class War3MapViewerMap {
          const cliffs = {};
          this.columns = columns - 1;
          this.rows = rows - 1;
@@ -2750,7 +2762,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..e48cb6adc06d5179d3c7be591fc2a86d
          for (let y = 0; y < rows; y++) {
              for (let x = 0; x < columns; x++) {
                  const bottomLeft = corners[y][x];
-@@ -209,8 +407,12 @@ class War3MapViewerMap {
+@@ -209,8 +419,12 @@ class War3MapViewerMap {
                  if (y < rows - 1 && x < columns - 1) {
                      // Water can be used with cliffs and normal corners, so store water state regardless.
                      waterFlags[instance] = this.isWater(x, y);
@@ -2765,7 +2777,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..e48cb6adc06d5179d3c7be591fc2a86d
                          const bottomLeftLayer = bottomLeft.layerHeight;
                          const bottomRightLayer = corners[y][x + 1].layerHeight;
                          const topLeftLayer = corners[y + 1][x].layerHeight;
-@@ -234,38 +436,30 @@ class War3MapViewerMap {
+@@ -234,38 +448,30 @@ class War3MapViewerMap {
                          }
                      }
                      else {
@@ -2823,7 +2835,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..e48cb6adc06d5179d3c7be591fc2a86d
          const gl = this.viewer.gl;
          const webgl = this.viewer.webgl;
          this.vertexBuffer = gl.createBuffer();
-@@ -278,10 +472,25 @@ class War3MapViewerMap {
+@@ -278,10 +484,25 @@ class War3MapViewerMap {
          gl.bindTexture(gl.TEXTURE_2D, this.cliffHeightMap);
          webgl.setTextureMode(gl.CLAMP_TO_EDGE, gl.CLAMP_TO_EDGE, gl.NEAREST, gl.NEAREST);
          gl.texImage2D(gl.TEXTURE_2D, 0, gl.ALPHA, columns, rows, 0, gl.ALPHA, gl.FLOAT, cliffHeights);
@@ -2850,7 +2862,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..e48cb6adc06d5179d3c7be591fc2a86d
          this.waterHeightMap = gl.createTexture();
          gl.bindTexture(gl.TEXTURE_2D, this.waterHeightMap);
          webgl.setTextureMode(gl.CLAMP_TO_EDGE, gl.CLAMP_TO_EDGE, gl.NEAREST, gl.NEAREST);
-@@ -291,10 +500,17 @@ class War3MapViewerMap {
+@@ -291,10 +512,17 @@ class War3MapViewerMap {
          gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(instanceCount).map((currentValue, index) => index), gl.STATIC_DRAW);
          this.textureBuffer = gl.createBuffer();
          gl.bindBuffer(gl.ARRAY_BUFFER, this.textureBuffer);
@@ -2870,7 +2882,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..e48cb6adc06d5179d3c7be591fc2a86d
          this.waterBuffer = gl.createBuffer();
          gl.bindBuffer(gl.ARRAY_BUFFER, this.waterBuffer);
          gl.bufferData(gl.ARRAY_BUFFER, waterFlags, gl.STATIC_DRAW);
-@@ -358,7 +574,87 @@ class War3MapViewerMap {
+@@ -358,7 +586,99 @@ class War3MapViewerMap {
                          }
                          promise.then((model) => {
                              if (model) {
@@ -2916,28 +2928,40 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..e48cb6adc06d5179d3c7be591fc2a86d
 +                                // NUMBERS — every one of them became 0, so the kind was
 +                                // always a NUL, the doodad rule always won, and every
 +                                // destructible was painted BLACK: DSIII's clouds (B000,
-+                                // ModelColor 65/80/90) and stars (B001) with it, which is
-+                                // why the real client's cloud bank is a blue-grey haze
-+                                // (65:80:90) and ours was nothing at all.
++                                // ModelColor 65/80/90) and stars (B001) with it, and the
++                                // login scene had no cloud bank at all.
 +                                const varIdx = Math.min(doodad.variation + 1, 99);
 +                                const suf = String(varIdx).padStart(2, '0');
 +                                const chan = (v, dflt) => v !== undefined && v !== '' ? Number(v) / 255 : dflt;
-+                                const modelColor = row.string('colorr');
-+                                if (modelColor !== undefined) {
-+                                    // A destructable: its ModelColor, and an empty cell is
-+                                    // the editor's default (white) rather than black.
-+                                    instance.instance.setVertexColor([
-+                                        chan(modelColor, 1),
-+                                        chan(row.string('colorg'), 1),
-+                                        chan(row.string('colorb'), 1),
-+                                        1,
-+                                    ]);
++                                // The row the ENGINE knows.  The map's TEXT SLK adds no
++                                // rows to the engine's tables, so an id only the map names
++                                // is unknown to it -- and the engine paints an unknown id
++                                // WHITE (see the snapshot in the constructor).  That is
++                                // why DSIII's cloud bank (B000, a row of the map's own
++                                // table) is a bright white bank in the real client and not
++                                // the 65/80/90 its own ModelColor column carries.
++                                const engineRow = this.ow3EngineRows.get(doodad.id);
++                                if (!engineRow) {
++                                    instance.instance.setVertexColor([1, 1, 1, 1]);
 +                                }
 +                                else {
-+                                    const cr = row.string(`vertR${suf}`);
-+                                    const cg = row.string(`vertG${suf}`);
-+                                    const cb = row.string(`vertB${suf}`);
-+                                    instance.instance.setVertexColor([chan(cr, 0), chan(cg, 0), chan(cb, 0), 1]);
++                                    const modelColor = engineRow['colorr'];
++                                    if (modelColor !== undefined) {
++                                        // A destructable: its ModelColor, and an empty cell is
++                                        // the editor's default (white) rather than black.
++                                        instance.instance.setVertexColor([
++                                            chan(modelColor, 1),
++                                            chan(engineRow['colorg'], 1),
++                                            chan(engineRow['colorb'], 1),
++                                            1,
++                                        ]);
++                                    }
++                                    else {
++                                        const cr = engineRow[`vertr${suf}`];
++                                        const cg = engineRow[`vertg${suf}`];
++                                        const cb = engineRow[`vertb${suf}`];
++                                        instance.instance.setVertexColor([chan(cr, 0), chan(cg, 0), chan(cb, 0), 1]);
++                                    }
 +                                }
 +                                // OpenWar3: destructibles override their model's
 +                                // replaceable texture per row (texID/texFile) — this is
@@ -2959,7 +2983,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..e48cb6adc06d5179d3c7be591fc2a86d
                              }
                          });
                      }
-@@ -485,6 +781,31 @@ class War3MapViewerMap {
+@@ -485,6 +805,31 @@ class War3MapViewerMap {
              worldScene.renderTranslucent();
          }
      }
@@ -2991,7 +3015,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..e48cb6adc06d5179d3c7be591fc2a86d
      renderGround() {
          if (this.terrainReady) {
              const gl = this.viewer.gl;
-@@ -503,6 +824,9 @@ class War3MapViewerMap {
+@@ -503,6 +848,9 @@ class War3MapViewerMap {
              gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
              webgl.useShader(shader);
              gl.uniformMatrix4fv(uniforms['u_VP'], false, this.worldScene.camera.viewProjectionMatrix);
@@ -3001,7 +3025,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..e48cb6adc06d5179d3c7be591fc2a86d
              gl.uniform2fv(uniforms['u_offset'], this.centerOffset);
              gl.uniform2f(uniforms['u_size'], this.columns, this.rows);
              gl.uniform1i(uniforms['u_heightMap'], 15);
-@@ -527,7 +851,19 @@ class War3MapViewerMap {
+@@ -527,7 +875,19 @@ class War3MapViewerMap {
                  gl.uniform1i(uniforms[`u_tilesets[${i}]`], i);
                  webgl.bindTexture(tilesetTextures[i], i);
              }
@@ -3022,7 +3046,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..e48cb6adc06d5179d3c7be591fc2a86d
              if (tilesetCount > 15) {
                  gl.uniform1f(uniforms['u_baseTileset'], 15);
                  for (let i = 0, l = tilesetCount - 15; i < l; i++) {
-@@ -535,7 +871,7 @@ class War3MapViewerMap {
+@@ -535,7 +895,7 @@ class War3MapViewerMap {
                      gl.uniform1f(uniforms[`u_extended[${i}]`], isExtended);
                      webgl.bindTexture(tilesetTextures[i + 15], i);
                  }
@@ -3031,7 +3055,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..e48cb6adc06d5179d3c7be591fc2a86d
              }
              instancedArrays.vertexAttribDivisorANGLE(texturesAttrib, 0);
              instancedArrays.vertexAttribDivisorANGLE(variationsAttrib, 0);
-@@ -558,11 +894,18 @@ class War3MapViewerMap {
+@@ -558,11 +918,18 @@ class War3MapViewerMap {
              gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
              webgl.useShader(shader);
              gl.uniformMatrix4fv(uniforms['u_VP'], false, this.worldScene.camera.viewProjectionMatrix);
@@ -3050,7 +3074,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..e48cb6adc06d5179d3c7be591fc2a86d
              gl.uniform1f(uniforms['u_offsetHeight'], this.waterHeightOffset);
              gl.uniform4fv(uniforms['u_maxDeepColor'], this.maxDeepColor);
              gl.uniform4fv(uniforms['u_minDeepColor'], this.minDeepColor);
-@@ -582,7 +925,14 @@ class War3MapViewerMap {
+@@ -582,7 +949,14 @@ class War3MapViewerMap {
              gl.vertexAttribPointer(isWaterAttrib, 1, gl.UNSIGNED_BYTE, false, 1, 0);
              instancedArrays.vertexAttribDivisorANGLE(isWaterAttrib, 1);
              gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.faceBuffer);
@@ -3066,7 +3090,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..e48cb6adc06d5179d3c7be591fc2a86d
              instancedArrays.vertexAttribDivisorANGLE(isWaterAttrib, 0);
              instancedArrays.vertexAttribDivisorANGLE(instanceAttrib, 0);
          }
-@@ -599,6 +949,9 @@ class War3MapViewerMap {
+@@ -599,6 +973,9 @@ class War3MapViewerMap {
              gl.disable(gl.BLEND);
              shader.use();
              gl.uniformMatrix4fv(uniforms['u_VP'], false, this.worldScene.camera.viewProjectionMatrix);
@@ -3076,7 +3100,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..e48cb6adc06d5179d3c7be591fc2a86d
              gl.uniform1i(uniforms['u_heightMap'], 0);
              gl.uniform2f(uniforms['u_pixel'], 1 / (this.columns + 1), 1 / (this.rows + 1));
              gl.uniform2fv(uniforms['u_centerOffset'], this.centerOffset);
-@@ -612,6 +965,23 @@ class War3MapViewerMap {
+@@ -612,6 +989,23 @@ class War3MapViewerMap {
                  gl.activeTexture(gl.TEXTURE2);
                  gl.bindTexture(gl.TEXTURE_2D, this.cliffTextures[1].webglResource);
              }
@@ -3100,7 +3124,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..e48cb6adc06d5179d3c7be591fc2a86d
              // Set instanced attributes.
              if (!vertexArrayObject) {
                  instancedArrays.vertexAttribDivisorANGLE(attribs['a_instancePosition'], 1);
-@@ -671,6 +1041,106 @@ class War3MapViewerMap {
+@@ -671,6 +1065,106 @@ class War3MapViewerMap {
          const topRight = corners[row + 1][column + 1].layerHeight;
          return bottomLeft !== bottomRight || bottomLeft !== topLeft || bottomLeft !== topRight;
      }
@@ -3207,7 +3231,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..e48cb6adc06d5179d3c7be591fc2a86d
      /**
       * Is the tile at the given column and row water?
       */
-@@ -692,6 +1162,108 @@ class War3MapViewerMap {
+@@ -692,6 +1186,108 @@ class War3MapViewerMap {
          }
          return 0;
      }
@@ -3316,7 +3340,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..e48cb6adc06d5179d3c7be591fc2a86d
      /**
       * Get the ground texture of a corner, whether it's normal ground, a cliff, or a blighted corner.
       */
-@@ -730,17 +1302,37 @@ class War3MapViewerMap {
+@@ -730,17 +1326,37 @@ class War3MapViewerMap {
      applyModificationTable(dataMap, metadataMap, modificationTable) {
          for (const modificationObject of modificationTable.objects) {
              let row;
