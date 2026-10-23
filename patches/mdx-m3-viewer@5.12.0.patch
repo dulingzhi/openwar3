@@ -2473,7 +2473,7 @@ index 49733805785c0ef269901d8928e47a953ada93a9..f15149f33f353822f4cb73eaf85eb727
    gl_Position = u_VP * vec4(position, 1.0);
  }
 diff --git a/dist/cjs/viewer/handlers/w3x/map.js b/dist/cjs/viewer/handlers/w3x/map.js
-index e4c8ea760e92653ef6423bd34f9111d0b062a901..c219a02b73f6bdf819510280194743fe086aa0f8 100644
+index e4c8ea760e92653ef6423bd34f9111d0b062a901..e48cb6adc06d5179d3c7be591fc2a86da603b9dc 100644
 --- a/dist/cjs/viewer/handlers/w3x/map.js
 +++ b/dist/cjs/viewer/handlers/w3x/map.js
 @@ -16,6 +16,41 @@ const file_3 = require("../../../parsers/w3x/doo/file");
@@ -2870,7 +2870,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..c219a02b73f6bdf819510280194743fe
          this.waterBuffer = gl.createBuffer();
          gl.bindBuffer(gl.ARRAY_BUFFER, this.waterBuffer);
          gl.bufferData(gl.ARRAY_BUFFER, waterFlags, gl.STATIC_DRAW);
-@@ -358,7 +574,70 @@ class War3MapViewerMap {
+@@ -358,7 +574,87 @@ class War3MapViewerMap {
                          }
                          promise.then((model) => {
                              if (model) {
@@ -2881,46 +2881,63 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..c219a02b73f6bdf819510280194743fe
 +                                // CWorldObjects::LoadObject does the same via ComputeHeight).
 +                                instance.ow3DooFlags = doodad.flags;
 +                                this.doodads.push(instance);
-+                                // OpenWar3: the type row's per-variation vertex tint
-+                                // (DoodadData's vertR01..vertR10 columns, 0-255). The
-+                                // engine's own read (CDoodadDB::GetVertexColor, IDA)
-+                                // composes the column as "vertR%02d" of the placed
-+                                // variation + 1, reads all three channels, and answers 0
-+                                // for a cell the w3d never set — i.e. an untinted
-+                                // variation is tinted BLACK, which on an additive layer
-+                                // renders as nothing at all. That is exactly what DSIII's
-+                                // real login shows: the lamp halos D00D placed at
-+                                // variations 0/1/2/3/5 with only variation 1's columns
-+                                // set (128,128,255) — the variation-1 halo IS the blue
-+                                // haze in the sky band, and the variation-0/2/3/5 ones
-+                                // (over the lantern) vanish entirely, leaving the golden
-+                                // lantern untouched. The base row's own 255 cells
-+                                // (Doodads.slk ships them) are inherited by the clone and
-+                                // overridden only where the w3d set a column, which is
-+                                // why the moon D00Z (tint 200,225 on variation 1's
-+                                // columns, blue inherited for B) renders blue-grey.
++                                // OpenWar3: the model's TINT, which the engine reads per
++                                // object KIND (CDoodads::GetModelVertexColor):
++                                //   · a DOODAD takes the per-variation vertex tint
++                                //     (DoodadData's vertR01..vertR10 columns, 0-255). The
++                                //     engine's own read (CDoodadDB::GetVertexColor, IDA)
++                                //     composes the column as "vertR%02d" of the placed
++                                //     variation + 1, reads all three channels, and answers 0
++                                //     for a cell the w3d never set — i.e. an untinted
++                                //     variation is tinted BLACK, which on an additive layer
++                                //     renders as nothing at all. That is exactly what DSIII's
++                                //     real login shows: the lamp halos D00D placed at
++                                //     variations 0/1/2/3/5 with only variation 1's columns
++                                //     set (128,128,255) — the variation-1 halo IS the blue
++                                //     haze in the sky band, and the variation-0/2/3/5 ones
++                                //     (over the lantern) vanish entirely, leaving the golden
++                                //     lantern untouched. The base row's own 255 cells
++                                //     (Doodads.slk ships them) are inherited by the clone and
++                                //     overridden only where the w3d set a column, which is
++                                //     why the moon D00Z (tint 200,225 on variation 1's
++                                //     columns, blue inherited for B) renders blue-grey.
++                                //   · a DESTRUCTABLE takes its row's ModelColor
++                                //     (DestructableData's colorr/colorg/colorb) — the
++                                //     destructable table carries no per-variation tint
++                                //     columns at all.
++                                // The row says which is which: the destructable table has
++                                // the colour columns and no tint columns, the doodad table
++                                // the other way round (290 vs 569 rows in the merged
++                                // table, and no row carrying both).
++                                //
++                                // The kind used to be read off the id's first character,
++                                // and `String.fromCharCode(...doodad.id)` spread a
++                                // STRING's characters into fromCharCode, which wants
++                                // NUMBERS — every one of them became 0, so the kind was
++                                // always a NUL, the doodad rule always won, and every
++                                // destructible was painted BLACK: DSIII's clouds (B000,
++                                // ModelColor 65/80/90) and stars (B001) with it, which is
++                                // why the real client's cloud bank is a blue-grey haze
++                                // (65:80:90) and ours was nothing at all.
 +                                const varIdx = Math.min(doodad.variation + 1, 99);
 +                                const suf = String(varIdx).padStart(2, '0');
-+                                // The engine branches by object KIND before reading tint
-+                                // (CDoodads::GetModelVertexColor): DESTRUCTIBLES go to
-+                                // DestructableDB::ModelColor — DestructableData carries no
-+                                // per-variation tint columns at all, so their default is
-+                                // the WHITE — while doodads go to the vert%02d columns
-+                                // with the black default below. DSIII's login hangs its
-+                                // clouds (B000) and stars (B001) as destructibles; tinting
-+                                // them by the doodad rule blackened both. Custom ids name
-+                                // the kind (destructables B0xx, doodads D0xx) and the
-+                                // prefix is the only kind marker our merged row carries.
-+                                const kindChar = String.fromCharCode(...doodad.id)[0];
-+                                if (kindChar === 'B') {
-+                                    instance.instance.setVertexColor([1, 1, 1, 1]);
++                                const chan = (v, dflt) => v !== undefined && v !== '' ? Number(v) / 255 : dflt;
++                                const modelColor = row.string('colorr');
++                                if (modelColor !== undefined) {
++                                    // A destructable: its ModelColor, and an empty cell is
++                                    // the editor's default (white) rather than black.
++                                    instance.instance.setVertexColor([
++                                        chan(modelColor, 1),
++                                        chan(row.string('colorg'), 1),
++                                        chan(row.string('colorb'), 1),
++                                        1,
++                                    ]);
 +                                }
 +                                else {
 +                                    const cr = row.string(`vertR${suf}`);
 +                                    const cg = row.string(`vertG${suf}`);
 +                                    const cb = row.string(`vertB${suf}`);
-+                                    const chan = (v) => v !== undefined && v !== '' ? Number(v) / 255 : 0;
-+                                    instance.instance.setVertexColor([chan(cr), chan(cg), chan(cb), 1]);
++                                    instance.instance.setVertexColor([chan(cr, 0), chan(cg, 0), chan(cb, 0), 1]);
 +                                }
 +                                // OpenWar3: destructibles override their model's
 +                                // replaceable texture per row (texID/texFile) — this is
@@ -2942,7 +2959,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..c219a02b73f6bdf819510280194743fe
                              }
                          });
                      }
-@@ -485,6 +764,31 @@ class War3MapViewerMap {
+@@ -485,6 +781,31 @@ class War3MapViewerMap {
              worldScene.renderTranslucent();
          }
      }
@@ -2974,7 +2991,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..c219a02b73f6bdf819510280194743fe
      renderGround() {
          if (this.terrainReady) {
              const gl = this.viewer.gl;
-@@ -503,6 +807,9 @@ class War3MapViewerMap {
+@@ -503,6 +824,9 @@ class War3MapViewerMap {
              gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
              webgl.useShader(shader);
              gl.uniformMatrix4fv(uniforms['u_VP'], false, this.worldScene.camera.viewProjectionMatrix);
@@ -2984,7 +3001,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..c219a02b73f6bdf819510280194743fe
              gl.uniform2fv(uniforms['u_offset'], this.centerOffset);
              gl.uniform2f(uniforms['u_size'], this.columns, this.rows);
              gl.uniform1i(uniforms['u_heightMap'], 15);
-@@ -527,7 +834,19 @@ class War3MapViewerMap {
+@@ -527,7 +851,19 @@ class War3MapViewerMap {
                  gl.uniform1i(uniforms[`u_tilesets[${i}]`], i);
                  webgl.bindTexture(tilesetTextures[i], i);
              }
@@ -3005,7 +3022,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..c219a02b73f6bdf819510280194743fe
              if (tilesetCount > 15) {
                  gl.uniform1f(uniforms['u_baseTileset'], 15);
                  for (let i = 0, l = tilesetCount - 15; i < l; i++) {
-@@ -535,7 +854,7 @@ class War3MapViewerMap {
+@@ -535,7 +871,7 @@ class War3MapViewerMap {
                      gl.uniform1f(uniforms[`u_extended[${i}]`], isExtended);
                      webgl.bindTexture(tilesetTextures[i + 15], i);
                  }
@@ -3014,7 +3031,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..c219a02b73f6bdf819510280194743fe
              }
              instancedArrays.vertexAttribDivisorANGLE(texturesAttrib, 0);
              instancedArrays.vertexAttribDivisorANGLE(variationsAttrib, 0);
-@@ -558,11 +877,18 @@ class War3MapViewerMap {
+@@ -558,11 +894,18 @@ class War3MapViewerMap {
              gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
              webgl.useShader(shader);
              gl.uniformMatrix4fv(uniforms['u_VP'], false, this.worldScene.camera.viewProjectionMatrix);
@@ -3033,7 +3050,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..c219a02b73f6bdf819510280194743fe
              gl.uniform1f(uniforms['u_offsetHeight'], this.waterHeightOffset);
              gl.uniform4fv(uniforms['u_maxDeepColor'], this.maxDeepColor);
              gl.uniform4fv(uniforms['u_minDeepColor'], this.minDeepColor);
-@@ -582,7 +908,14 @@ class War3MapViewerMap {
+@@ -582,7 +925,14 @@ class War3MapViewerMap {
              gl.vertexAttribPointer(isWaterAttrib, 1, gl.UNSIGNED_BYTE, false, 1, 0);
              instancedArrays.vertexAttribDivisorANGLE(isWaterAttrib, 1);
              gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.faceBuffer);
@@ -3049,7 +3066,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..c219a02b73f6bdf819510280194743fe
              instancedArrays.vertexAttribDivisorANGLE(isWaterAttrib, 0);
              instancedArrays.vertexAttribDivisorANGLE(instanceAttrib, 0);
          }
-@@ -599,6 +932,9 @@ class War3MapViewerMap {
+@@ -599,6 +949,9 @@ class War3MapViewerMap {
              gl.disable(gl.BLEND);
              shader.use();
              gl.uniformMatrix4fv(uniforms['u_VP'], false, this.worldScene.camera.viewProjectionMatrix);
@@ -3059,7 +3076,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..c219a02b73f6bdf819510280194743fe
              gl.uniform1i(uniforms['u_heightMap'], 0);
              gl.uniform2f(uniforms['u_pixel'], 1 / (this.columns + 1), 1 / (this.rows + 1));
              gl.uniform2fv(uniforms['u_centerOffset'], this.centerOffset);
-@@ -612,6 +948,23 @@ class War3MapViewerMap {
+@@ -612,6 +965,23 @@ class War3MapViewerMap {
                  gl.activeTexture(gl.TEXTURE2);
                  gl.bindTexture(gl.TEXTURE_2D, this.cliffTextures[1].webglResource);
              }
@@ -3083,7 +3100,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..c219a02b73f6bdf819510280194743fe
              // Set instanced attributes.
              if (!vertexArrayObject) {
                  instancedArrays.vertexAttribDivisorANGLE(attribs['a_instancePosition'], 1);
-@@ -671,6 +1024,106 @@ class War3MapViewerMap {
+@@ -671,6 +1041,106 @@ class War3MapViewerMap {
          const topRight = corners[row + 1][column + 1].layerHeight;
          return bottomLeft !== bottomRight || bottomLeft !== topLeft || bottomLeft !== topRight;
      }
@@ -3190,7 +3207,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..c219a02b73f6bdf819510280194743fe
      /**
       * Is the tile at the given column and row water?
       */
-@@ -692,6 +1145,108 @@ class War3MapViewerMap {
+@@ -692,6 +1162,108 @@ class War3MapViewerMap {
          }
          return 0;
      }
@@ -3299,7 +3316,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..c219a02b73f6bdf819510280194743fe
      /**
       * Get the ground texture of a corner, whether it's normal ground, a cliff, or a blighted corner.
       */
-@@ -730,17 +1285,37 @@ class War3MapViewerMap {
+@@ -730,17 +1302,37 @@ class War3MapViewerMap {
      applyModificationTable(dataMap, metadataMap, modificationTable) {
          for (const modificationObject of modificationTable.objects) {
              let row;
