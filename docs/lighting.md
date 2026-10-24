@@ -82,6 +82,65 @@ lines on cliffs" (Lost Temple shows all three at once):
 A trap when testing any of this: `MapViewerScene.ensureFog` rebuilds the veil whenever
 `fog` is null, so setting `mapScene().fog = null` from the page does NOT turn the fog off.
 
+## The engine's light model: a lamp is a WASH, not a disc
+
+Everything here was measured off the **1.27 `Game.dll`** (the install this project plays),
+not assumed:
+
+* **A light MULTIPLIES the surface — it is never added to it.** D3D9's fixed-function output
+  is `texel × clamp(Σ (Diffuse_i × attenuation_i × N·L_i) + Σ Ambient_i, 0, 1)`: the light
+  SUM is clamped per channel and only then modulates the texel. A lamp *raises the light on*
+  the ground it stands on; it cannot paint orange onto black.
+* **A point light's attenuation is `1 / (1 + linear·d + quadratic·d²)`,** and the
+  coefficients are **global**: `GxLightingSetFalloff(0.0, 0.00050000002)` is called exactly
+  once, at device init (`Game.dll.c:268329`), and never changed afterwards.
+  `CGxDeviceD3d::IStateSyncLights` (`Game.dll.c:472600`) uploads `Range = 10000`,
+  `Falloff = 1`, `Attenuation0 = 1`, `Attenuation1 = m_lightLinearFalloff` and
+  `Attenuation2 = m_lightQuadraticFalloff` — so the linear term is **zero** and the
+  attenuation is purely quadratic.
+* **The MDX `LITE` chunk's `AttenuationStart`/`AttenuationEnd` never reach the light.** The
+  engine's `struct CLight` (`Game.dll.h:133364`) carries no range field at all: `m_light`,
+  `m_ambColor`, `m_dirColor`, `m_ambIntensity`, `m_dirIntensity`, `m_dir` and nothing else.
+  The header has `MDLTOK_ATTENUATION` tokens, the values are read, and they are dropped.
+* **The engine's intensity is in the MDX's own scale.** `Diffuse = dirColor ×
+  (dirIntensity / 255)`, so a `LITE` chunk's `Color` (0…1) and `Intensity` (0…255) multiply
+  out to exactly the product our shaders use.
+
+The consequence is that a lamp at intensity 10 throws a **wide, soft pool**: at 144 units the
+attenuation is still 0.088, so the light is a warm wash reaching far past the model that
+carries it. Our shaders used to do the opposite on both counts — a per-light
+`min(colour × window × N·L, 1)` pool ADDED to the texel, inside a hard linear window taken
+from the LITE chunk — which is why our lantern pool was a saturated yellow-green disc while
+the real client's is a wide soft brown.
+
+The day/night rig and the model lights are **ONE sum**. `sd.frag` used to make them
+alternatives (`if (u_omniEnabled) … else if (u_dncEnabled) …`), so a model standing near a
+lamp lost the map's own dim sun entirely and went black; the engine adds them. The falloff
+is written down in one place, [`src/render/omniFalloff.ts`](../src/render/omniFalloff.ts).
+
+**An `Unshaded` layer takes no light at all.** The layer flag `0x1` removes the layer from
+that sum — the ambient AND the directional term are skipped for it and it is drawn at its own
+colour, which is the whole point of the flag on a team-colour glow or an effect quad.
+`sd.frag` used to multiply an unshaded layer by the scene's ambient when it was also fogged
+(the `0x20` bit clear), which is wrong twice over: DSIII's night rig is `light.mdx`, whose
+`AmbIntensity` is 0, so **every one of its glow quads was multiplied to black** — the login
+lantern lost its entire warm halo — and a halo's colour comes from its texture and the
+doodad's own tint, never from a light.
+
+Measured on the DSIII login against the real client's capture (same relative patches at the
+lamp, RGB). The "before" column is not a measurement of a grey area — the ambient there is
+exactly `(0,0,0)`, so the multiply drove every one of those quads to nothing and the halo was
+gone:
+
+| patch | real | after |
+| --- | --- | --- |
+| left of the lamp (air) | 92/49/32 | 75/40/24 |
+| below the lamp (ground) | 77/37/12 | 66/30/9 |
+| the post beside it | 121/65/14 | 97/45/10 |
+
+The remaining ~20 % is the capture's own exposure on a locally lit patch, not a missing
+term: ground clear of the lamp matches cell for cell (real 12/11/5, ours 13/11/4).
+
 ## Glue-screen lighting (issue #105)
 
 The main menu and the campaign backdrops are 3D scenes, and **every glue model carries its own

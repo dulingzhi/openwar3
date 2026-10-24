@@ -1,3 +1,5 @@
+import { writeOmniFalloff } from "./omniFalloff";
+
 // The world's MODEL lights, as one array the shaders read (docs/lighting.md).
 //
 // WC3's MDX models carry their own omni lights in the LITE chunk — a campfire, a lamppost,
@@ -23,7 +25,9 @@ export interface WorldOmniLights {
   ambient: Float32Array;
   positions: Float32Array; // MAX_OMNI × 3, world space
   colors: Float32Array; // MAX_OMNI × 3, Color × Intensity (BGR-swizzled like menuScene)
-  attenuations: Float32Array; // MAX_OMNI × 2, (start, end)
+  /** MAX_OMNI × 2, (linear, quadratic) — the engine's global falloff, which is the same
+   *  for every light (see `omniFalloff.ts`). */
+  falloff: Float32Array;
 }
 
 interface Candidate {
@@ -33,8 +37,6 @@ interface Candidate {
   r: number;
   g: number;
   b: number;
-  att0: number;
-  att1: number;
   /** Squared distance from the camera — the picker sorts on it. */
   d2: number;
 }
@@ -45,7 +47,7 @@ export class WorldOmniLightsCollector {
     ambient: new Float32Array(3),
     positions: new Float32Array(MAX_OMNI * 3),
     colors: new Float32Array(MAX_OMNI * 3),
-    attenuations: new Float32Array(MAX_OMNI * 2),
+    falloff: new Float32Array(MAX_OMNI * 2),
   };
   private candidates: Candidate[] = [];
 
@@ -78,8 +80,9 @@ export class WorldOmniLightsCollector {
       o.colors[s * 3] = c.r;
       o.colors[s * 3 + 1] = c.g;
       o.colors[s * 3 + 2] = c.b;
-      o.attenuations[s * 2] = c.att0;
-      o.attenuations[s * 2 + 1] = c.att1;
+      // Every point light attenuates by the engine's GLOBAL falloff — the LITE chunk's own
+      // AttenuationStart/End never reach the light (see `omniFalloff.ts`).
+      writeOmniFalloff(o.falloff, s);
     }
     o.count = slots;
   }
@@ -109,10 +112,6 @@ export class WorldOmniLightsCollector {
       if (intensity <= 0) continue;
       light.getVisibility(s, sequence, frame, counter);
       if (s[0] <= 0) continue; // the KLAV track — the lamp is OFF through this stretch of its clip
-      light.getAttenuationStart(s, sequence, frame, counter);
-      const att0 = s[0];
-      light.getAttenuationEnd(s, sequence, frame, counter);
-      const att1 = Math.max(s[0], att0 + 1);
       const x = p[0], y = p[1], z = p[2];
       // The LITE chunk's static Color field is RGB (the orange lamp reads (1, 0.53, 0.01)
       // straight off the parser and the real client lights it warm) — NOT the BGR of the
@@ -125,7 +124,6 @@ export class WorldOmniLightsCollector {
         r: v[0] * intensity,
         g: v[1] * intensity,
         b: v[2] * intensity,
-        att0, att1,
         d2: dx * dx + dy * dy + dz * dz,
       });
     }
@@ -156,6 +154,4 @@ interface WorldLight {
   getIntensity(out: Float32Array, sequence: number, frame: number, counter: number): void;
   /** The light's KLAV track — 0 while the model's clip keeps the light OFF. */
   getVisibility(out: Float32Array, sequence: number, frame: number, counter: number): void;
-  getAttenuationStart(out: Float32Array, sequence: number, frame: number, counter: number): void;
-  getAttenuationEnd(out: Float32Array, sequence: number, frame: number, counter: number): void;
 }

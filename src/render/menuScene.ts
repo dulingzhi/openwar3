@@ -1,5 +1,6 @@
 import ModelViewerCtor from "mdx-m3-viewer/dist/cjs/viewer/viewer";
 import { maxOmniLights, renderScale } from "./videoQuality";
+import { writeOmniFalloff } from "./omniFalloff";
 import mdxHandler from "mdx-m3-viewer/dist/cjs/viewer/handlers/mdx/handler";
 import blpHandler from "mdx-m3-viewer/dist/cjs/viewer/handlers/blp/handler";
 import type { DataSource } from "../vfs/types";
@@ -226,15 +227,17 @@ export interface BackdropTuning {
  * to mdx-m3-viewer's stock `clamp(N·L + 0.7)` — a 0.7…1.0 wash with no real falloff anywhere.
  *
  * Dumped from the real models, and the numbers only make sense together:
- *   NightElf_Exp   4 omni, attenuation 80→200, colour (0.82, 1.00, 1.00), intensity 6/250/15/7
- *   Orc_Exp        4 omni, same window, intensity 80/75/80/35
- *   MainMenu3D_Exp 5 omni, same window, intensity 170…280
- *   Undead3D_Exp   4 omni, same window, intensity 120/111/222/40
- *   Alliance_Exp   4 omni, same window, intensity 400/1000/1000/800 — plus one DIRECTIONAL
- * An 80→200 unit reach sounds far too small for a scene whose bounds run to ±3000 — until you
- * read the model's own camera: it sits 340 units from its target. These are **dioramas**, a
- * small lit set close to the eye with a big painted backdrop far behind it, and the lights are
- * sized for the set. The far scenery is what the campaign's own `BackgroundFog*` is for.
+ *   NightElf_Exp   4 omni, colour (0.82, 1.00, 1.00), intensity 6/250/15/7
+ *   Orc_Exp        4 omni, intensity 80/75/80/35
+ *   MainMenu3D_Exp 5 omni, intensity 170…280
+ *   Undead3D_Exp   4 omni, intensity 120/111/222/40
+ *   Alliance_Exp   4 omni, intensity 400/1000/1000/800 — plus one DIRECTIONAL
+ * The LITE chunk's own `AttenuationStart`/`End` (80→200 in the glue set) are **not** part of
+ * the arithmetic: the engine's light carries no range, and every point light attenuates by
+ * the game's one global falloff (see `omniFalloff.ts`). What the numbers above DO say is
+ * where the light sits — these are **dioramas**, a small lit set close to the eye with a big
+ * painted backdrop far behind it, and the intensities are sized for the set. The far scenery
+ * is what the campaign's own `BackgroundFog*` is for.
  *
  * Every one of them carries `AmbIntensity 0`, so a glue scene's whole illumination is its
  * point lights and the base ambient `BackdropTuning.lightAmbient` supplies.
@@ -242,11 +245,11 @@ export interface BackdropTuning {
  * **`Type` is not always 0.** Four of the five glue models carry nothing but omnis, and
  * Alliance_Exp carries `FDirect01`, `Type 1` — a DIRECTIONAL light, which has a direction
  * instead of a position and no attenuation at all. Read as an omni it was a point light at the
- * node's pivot with an 80→200 window, 6102 units from that model's own camera target, so it
- * contributed exactly nothing while occupying a slot and making the loop's arithmetic a lie.
- * It is filtered out rather than approximated: the MDX gives it no orientation to use (identity
- * rotation, no parent, `Intensity 0.1`), and inventing one would be guessing at what the
- * reference shows. See docs/lighting.md.
+ * node's pivot, 6102 units from that model's own camera target — where the falloff leaves
+ * it contributing nothing at all — while occupying a slot and making the loop's arithmetic a
+ * lie. It is filtered out rather than approximated: the MDX gives it no orientation to use
+ * (identity rotation, no parent, `Intensity 0.1`), and inventing one would be guessing at what
+ * the reference shows. See docs/lighting.md.
  */
 export interface OmniLights {
   /** How many slots are filled; 0 means "no lights", and the shader skips the loop. */
@@ -255,7 +258,9 @@ export interface OmniLights {
   ambient: Float32Array;
   positions: Float32Array; // MAX_OMNI × 3, world space
   colors: Float32Array; // MAX_OMNI × 3, Color × Intensity
-  attenuations: Float32Array; // MAX_OMNI × 2, (start, end)
+  /** MAX_OMNI × 2, (linear, quadratic) — the engine's global falloff, which is the same
+   *  for every light (see `omniFalloff.ts`). */
+  falloff: Float32Array;
 }
 
 /** Must match `MAX_OMNI` in the patched sd.frag. */
@@ -315,8 +320,6 @@ interface MdxLight {
   /** The LITE chunk's own `Type`: 0 omnidirectional, 1 directional, 2 ambient. Only 0 is a
    *  point light, and only 0 is what `updateOmniLights` uploads — see the filter there. */
   type: number;
-  getAttenuationStart(out: Float32Array, sequence: number, frame: number, counter: number): number;
-  getAttenuationEnd(out: Float32Array, sequence: number, frame: number, counter: number): number;
   getColor(out: Float32Array, sequence: number, frame: number, counter: number): number;
   getIntensity(out: Float32Array, sequence: number, frame: number, counter: number): number;
   getAmbientColor(out: Float32Array, sequence: number, frame: number, counter: number): number;
@@ -589,7 +592,7 @@ export class MenuScene {
     ambient: new Float32Array(3),
     positions: new Float32Array(MAX_OMNI * 3),
     colors: new Float32Array(MAX_OMNI * 3),
-    attenuations: new Float32Array(MAX_OMNI * 2),
+    falloff: new Float32Array(MAX_OMNI * 2),
   };
   private lightVec = new Float32Array(3);
   private lightScalar = new Float32Array(1);
@@ -1216,7 +1219,7 @@ export class MenuScene {
     const o = this.omni;
     o.positions.fill(0);
     o.colors.fill(0);
-    o.attenuations.fill(0);
+    o.falloff.fill(0);
     o.ambient.fill(0);
 
     const { sequence, frame, counter } = instance;
@@ -1230,8 +1233,8 @@ export class MenuScene {
     const cap = Math.min(MAX_OMNI, maxOmniLights());
     for (let i = 0; i < lights.length && n < cap; i++) {
       const light = lights[i];
-      // Only `Type 0` is a point light, and everything below it — a world position, a distance
-      // and a linear attenuation window — is a point light's arithmetic. Alliance_Exp carries
+      // Only `Type 0` is a point light, and everything below it — a world position, a colour
+      // and an intensity — is a point light's arithmetic. Alliance_Exp carries
       // the one exception in the glue set (`FDirect01`, type 1); see OmniLights.
       if (light.type !== 0) continue;
       // Light i's node sits right after the bones — mdx/modelinstance.js builds them in that
@@ -1244,11 +1247,9 @@ export class MenuScene {
       light.getIntensity(s, sequence, frame, counter);
       for (let c = 0; c < 3; c++) o.colors[n * 3 + c] = v[2 - c] * s[0]; // BGR → RGB
 
-      light.getAttenuationStart(s, sequence, frame, counter);
-      const start = s[0];
-      light.getAttenuationEnd(s, sequence, frame, counter);
-      o.attenuations[n * 2] = start;
-      o.attenuations[n * 2 + 1] = Math.max(s[0], start + 1); // never a zero-width window
+      // Every point light attenuates by the engine's GLOBAL falloff — the LITE chunk's own
+      // AttenuationStart/End never reach the light (see `omniFalloff.ts`).
+      writeOmniFalloff(o.falloff, n);
 
       light.getAmbientColor(v, sequence, frame, counter);
       light.getAmbientIntensity(s, sequence, frame, counter);

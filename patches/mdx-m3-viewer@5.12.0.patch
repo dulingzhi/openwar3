@@ -856,7 +856,7 @@ index 26347d6d988194c95415c2a40597123e80bd61a2..3d28cc4165be8474ed4005abfe3ce726
      }
  }
 diff --git a/dist/cjs/viewer/handlers/mdx/batchgroup.js b/dist/cjs/viewer/handlers/mdx/batchgroup.js
-index 7fe06bd7314e83b578dc8987e819b08cea287dfb..dea3c0cc347ba3ccaf780b93d59784e2cfbe1b2f 100644
+index 7fe06bd7314e83b578dc8987e819b08cea287dfb..e4626fa61debb22c8b8f9deadf276e85aae2e7f5 100644
 --- a/dist/cjs/viewer/handlers/mdx/batchgroup.js
 +++ b/dist/cjs/viewer/handlers/mdx/batchgroup.js
 @@ -2,6 +2,8 @@
@@ -912,7 +912,7 @@ index 7fe06bd7314e83b578dc8987e819b08cea287dfb..dea3c0cc347ba3ccaf780b93d59784e2
 +            gl.uniform3fv(uniforms['u_omniAmbient'], omni.ambient);
 +            gl.uniform3fv(uniforms['u_omniPos[0]'], omni.positions);
 +            gl.uniform3fv(uniforms['u_omniColor[0]'], omni.colors);
-+            gl.uniform2fv(uniforms['u_omniAtten[0]'], omni.attenuations);
++            gl.uniform2fv(uniforms['u_omniFalloff[0]'], omni.falloff);
 +        }
 +        else {
 +            gl.uniform1f(uniforms['u_omniEnabled'], 0);
@@ -2210,10 +2210,10 @@ index 3e7460e457fec7d247ebcb2b8641ffb028f47736..6bca9cb85b2e627bb4b110d8f4cc0655
  
    mat3 mv = mat3(u_MV);
 diff --git a/dist/cjs/viewer/handlers/mdx/shaders/sd.frag.js b/dist/cjs/viewer/handlers/mdx/shaders/sd.frag.js
-index 235f29101256617d34587316e8f40984a8f95685..d9699956c9b1f4ce2a4fe949cf8f31fd47bf9c1d 100644
+index 235f29101256617d34587316e8f40984a8f95685..f0e336912b2671636a3f93924b698a41467904a6 100644
 --- a/dist/cjs/viewer/handlers/mdx/shaders/sd.frag.js
 +++ b/dist/cjs/viewer/handlers/mdx/shaders/sd.frag.js
-@@ -10,6 +10,82 @@ ${quattransform_glsl_1.default}
+@@ -10,6 +10,84 @@ ${quattransform_glsl_1.default}
  uniform sampler2D u_texture;
  uniform float u_filterMode;
  uniform bool u_unshaded;
@@ -2242,16 +2242,18 @@ index 235f29101256617d34587316e8f40984a8f95685..d9699956c9b1f4ce2a4fe949cf8f31fd
 +// those scenes in the reference, and with none of them a backdrop falls through to the
 +// stock near-flat lambert below and reads flat and over-bright.
 +//
-+// A point light with WC3's linear attenuation window: full inside AttenuationStart, zero
-+// past AttenuationEnd. u_omniEnabled is 0 for every scene that has no LITE lights of its
-+// own (the map, the portrait bust), and the branch is uniform, so the loop costs those
-+// scenes nothing. MAX_OMNI covers the largest glue model with room to spare.
++// A point light with WC3's own attenuation: 1/(1 + linear·d + quadratic·d²) — the global
++// falloff GxLightingSetFalloff(0, 0.0005), set once at start-up (WC3 1.27 Game.dll). The
++// MDX LITE chunk's AttenuationStart/End never reach the light: the engine's CGxLight
++// carries no range at all. u_omniEnabled is 0 for every scene that has no LITE lights of
++// its own (the map, the portrait bust), and the branch is uniform, so the loop costs
++// those scenes nothing. MAX_OMNI covers the largest glue model with room to spare.
 +#define MAX_OMNI 8
 +uniform float u_omniEnabled;
 +uniform vec3 u_omniAmbient; // Σ (AmbColor × AmbIntensity) over the model's lights
 +uniform vec3 u_omniPos[MAX_OMNI]; // world space, from the light NODE (they animate)
 +uniform vec3 u_omniColor[MAX_OMNI]; // Color × Intensity; unused slots are black
-+uniform vec2 u_omniAtten[MAX_OMNI]; // (AttenuationStart, AttenuationEnd)
++uniform vec2 u_omniFalloff[MAX_OMNI]; // (linear, quadratic) attenuation coefficients
 +
 +// OpenWar3: linear distance fog (src/render/fog.ts). Fragments fade toward
 +// u_distFogColor between u_distFogStart and u_distFogEnd world units from the eye —
@@ -2296,7 +2298,7 @@ index 235f29101256617d34587316e8f40984a8f95685..d9699956c9b1f4ce2a4fe949cf8f31fd
  
  varying vec2 v_uv;
  varying vec3 v_normal;
-@@ -17,6 +93,57 @@ varying vec4 v_color;
+@@ -17,6 +95,57 @@ varying vec4 v_color;
  varying vec4 v_uvTransRot;
  varying float v_uvScale;
  varying vec3 v_lightDir;
@@ -2354,7 +2356,7 @@ index 235f29101256617d34587316e8f40984a8f95685..d9699956c9b1f4ce2a4fe949cf8f31fd
  
  vec4 getDiffuseColor() {
    vec2 uv = v_uv;
-@@ -43,7 +170,7 @@ vec4 getDiffuseColor() {
+@@ -43,7 +172,7 @@ vec4 getDiffuseColor() {
      discard;
    }
  
@@ -2363,7 +2365,7 @@ index 235f29101256617d34587316e8f40984a8f95685..d9699956c9b1f4ce2a4fe949cf8f31fd
  }
  
  void onlyTexCoords() {
-@@ -55,19 +182,54 @@ void onlyNormals() {
+@@ -55,19 +184,62 @@ void onlyNormals() {
  }
  
  void onlyDiffuse() {
@@ -2379,45 +2381,52 @@ index 235f29101256617d34587316e8f40984a8f95685..d9699956c9b1f4ce2a4fe949cf8f31fd
    if (!u_unshaded) {
 -    float lambertFactor = clamp(dot(v_normal, v_lightDir), 0.0, 1.0);
 -    lambertFactor = clamp(lambertFactor + 0.7, 0.0, 1.0);
--
--    color.rgb *= lambertFactor;
-+    if (u_omniEnabled > 0.5) {
-+      // The model's own lights (see the u_omni* block): ambient + Σ colour·attenuation·N·L.
-+      vec3 n = normalize(v_normal);
-+      vec3 light = u_omniAmbient;
-+      for (int i = 0; i < MAX_OMNI; i++) {
-+        vec3 toLight = u_omniPos[i] - v_worldPos;
-+        float dist = length(toLight);
-+        // Linear window between the light's own start/end. Unused slots are black, so they
-+        // add nothing whatever this evaluates to — no dynamic loop bound needed.
-+        float atten = clamp((u_omniAtten[i].y - dist) / max(u_omniAtten[i].y - u_omniAtten[i].x, 0.001), 0.0, 1.0);
-+        float ndotl = max(dot(n, toLight / max(dist, 0.001)), 0.0);
-+        light += u_omniColor[i] * (atten * ndotl);
-+      }
-+      color.rgb *= clamp(light, 0.0, 1.0);
-+    } else if (u_dncEnabled > 0.5) {
-+      // WC3's fixed-function lighting: ambient + diffuse*N·L, clamped per channel.
++    // WC3's fixed-function lighting (WC3 1.27 Game.dll): D3D9 sums every enabled light's
++    // (Diffuse × attenuation × N·L) and the ambients, clamps that sum to 1 per channel and
++    // only then modulates the texel. The day/night rig and the model's own omni lights are
++    // ONE sum: a light never replaces the other, and neither is added to the colour.
++    vec3 light = vec3(0.0);
++    float lit = 0.0;
++    if (u_dncEnabled > 0.5) {
 +      // v_normal is already world space (the vertex shader skins into world space
 +      // and gl_Position needs no model matrix), so N·L is a plain world-space dot.
 +      float ndotl = max(dot(normalize(v_normal), u_dncLightDir), 0.0);
-+      color.rgb *= clamp(u_dncAmbient + u_dncDiffuse * ndotl, 0.0, 1.0);
++      light += u_dncAmbient + u_dncDiffuse * ndotl;
++      lit = 1.0;
++    }
++    if (u_omniEnabled > 0.5) {
++      // The model's own lights (see the u_omni* block): ambient + Σ colour·attenuation·N·L.
++      vec3 n = normalize(v_normal);
++      light += u_omniAmbient;
++      for (int i = 0; i < MAX_OMNI; i++) {
++        vec3 toLight = u_omniPos[i] - v_worldPos;
++        float dist = length(toLight);
++        // The engine's point-light attenuation. Unused slots are black, so they add
++        // nothing whatever this evaluates to — no dynamic loop bound needed.
++        vec2 fall = u_omniFalloff[i];
++        float atten = 1.0 / (1.0 + fall.x * dist + fall.y * dist * dist);
++        float ndotl = max(dot(n, toLight / max(dist, 0.001)), 0.0);
++        light += u_omniColor[i] * (atten * ndotl);
++      }
++      lit = 1.0;
++    }
++    if (lit > 0.5) {
++      color.rgb *= clamp(light, 0.0, 1.0);
 +    } else {
 +      float lambertFactor = clamp(dot(v_normal, v_lightDir), 0.0, 1.0);
 +      lambertFactor = clamp(lambertFactor + 0.7, 0.0, 1.0);
-+
+ 
+-    color.rgb *= lambertFactor;
 +      color.rgb *= lambertFactor;
 +    }
-+  } else if (u_dncEnabled > 0.5 && u_unfogged < 0.5) {
-+    // OpenWar3: FOGGED unshaded layers still ride the scene's AMBIENT light. WC3's night
-+    // dims them hard — DSIII's real login shows its fogged halo quads (Glow_Light, no
-+    // Unfogged flag) at roughly a tenth of full brightness around the lamp, which is why
-+    // the real client's lantern area has no white flood while ours did. The UNFOGGED
-+    // planes (the moon, the clouds, the stars — all 0x31) are EXEMPT: they ride neither
-+    // the distance fog nor this night dimming, which is why the real moon and clouds stay
-+    // bright at 2200+ units past the fog's own end. Unshaded only opts out of the
-+    // DIRECTIONAL term above.
-+    color.rgb *= u_dncAmbient;
    }
++  // An UNSHADED layer takes NO lighting at all — WC3's layer flag 0x1 opts the layer out
++  // of the light sum (WC3 1.27 Game.dll, the SD fixed-function path: the ambient and the
++  // directional term are skipped for it), so it is drawn at its own colour.  Multiplying
++  // it by the scene's AMBIENT was wrong twice over: the ambient is (0,0,0) at night, which
++  // turned every ADDITIVE glow quad (Glow_Light, flags 0x11) BLACK — DSIII's login lantern
++  // lost its whole warm halo — and a halo quad's colour comes from its texture and the
++  // doodad's vertex tint, never from a light.
  
 +  color.rgb = applyBoundaryTint(applyDistFog(color.rgb, u_filterMode), u_filterMode);
    gl_FragColor = color;
@@ -2473,10 +2482,10 @@ index 49733805785c0ef269901d8928e47a953ada93a9..f15149f33f353822f4cb73eaf85eb727
    gl_Position = u_VP * vec4(position, 1.0);
  }
 diff --git a/dist/cjs/viewer/handlers/w3x/map.js b/dist/cjs/viewer/handlers/w3x/map.js
-index e4c8ea760e92653ef6423bd34f9111d0b062a901..48e77f8ffa8b37c03e12b4ff8992b9a77e9f5220 100644
+index e4c8ea760e92653ef6423bd34f9111d0b062a901..3d247ffa0421ae5889824505ae58feb91b717674 100644
 --- a/dist/cjs/viewer/handlers/w3x/map.js
 +++ b/dist/cjs/viewer/handlers/w3x/map.js
-@@ -16,6 +16,41 @@ const file_3 = require("../../../parsers/w3x/doo/file");
+@@ -16,6 +16,167 @@ const file_3 = require("../../../parsers/w3x/doo/file");
  const file_4 = require("../../../parsers/w3x/unitsdoo/file");
  const normalHeap1 = gl_matrix_1.vec3.create();
  const normalHeap2 = gl_matrix_1.vec3.create();
@@ -2503,6 +2512,132 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..48e77f8ffa8b37c03e12b4ff8992b9a7
 +    return index.get(key.toLowerCase());
 +}
 +/**
++ * OpenWar3: the engine's animation vocabulary. CAnimTokenizer::RegisterAnims
++ * (Game.dll 1.27, 0x6f6c4920) registers one id per animation word; a sequence name is
++ * scored by the tokens its words carry.
++ */
++const OW3_ANIM_TOKEN_IDS = {
++    attack: 6, birth: 0, cinematic: 0x80000000, death: 1, decay: 2, dissipate: 3,
++    morph: 7, portrait: 10, sleep: 8, spell: 9, stand: 4, walk: 5, alternate: 11,
++    alternateex: 12, berserk: 62, chain: 55, channel: 20, complete: 34, critical: 33,
++    defend: 21, drain: 53, eattree: 56, entangle: 61, fast: 17, fill: 54, flail: 58,
++    flesh: 27, fifth: 43, fire: 26, first: 39, five: 48, four: 47, fourth: 42,
++    gold: 35, hit: 28, large: 51, left: 24, light: 30, looping: 13, lumber: 36,
++    medium: 50, moderate: 31, off: 59, one: 44, puke: 57, ready: 19, right: 25,
++    second: 40, severe: 32, slam: 14, small: 49, spiked: 16, spin: 18, swim: 60,
++    talk: 38, third: 41, three: 46, throw: 15, turn: 23, two: 45, victory: 22,
++    work: 37, wounded: 29, upgrade: 52,
++};
++/**
++ * OpenWar3: tokenise a sequence name the way sGetAnimTokens (0x6f725770) does -- split
++ * on spaces, and DROP a word the vocabulary does not know. "stand 2" therefore scores
++ * exactly like "stand": the "2" is not a token.
++ */
++function ow3AnimTokens(name) {
++    const tokens = [];
++    for (const word of String(name).split(' ')) {
++        if (!word) {
++            continue;
++        }
++        const id = OW3_ANIM_TOKEN_IDS[word.toLowerCase()];
++        if (id !== undefined) {
++            tokens.push(id);
++        }
++    }
++    return tokens;
++}
++/**
++ * OpenWar3: ModelFindBestMatchAnimation (0x6f70f3d0). A candidate scores the goal
++ * tokens it carries (sNumMatchingTokens, 0x6f727740); the best is the one with the
++ * MOST matched goal tokens and, among those, the FEWEST extra tokens of its own.
++ * The engine keeps every sequence that ties and rolls among them by rarity
++ * (WEUChanceTableChoose, 0x6f71eb90) -- and with every rarity 0 that roll has no
++ * range and falls off the end, returning the FIRST of the tied sequences.
++ */
++function ow3FindBestMatchAnimation(model, goalName) {
++    const sequences = model.sequences || [];
++    const goal = ow3AnimTokens(goalName);
++    let bestMatched = 0;
++    let bestExtra = 1000;
++    let best = [];
++    for (let i = 0; i < sequences.length; i++) {
++        const tokens = ow3AnimTokens(sequences[i].name);
++        let matched = 0;
++        for (const token of goal) {
++            if (tokens.indexOf(token) !== -1) {
++                matched++;
++            }
++        }
++        const extra = tokens.length - matched;
++        if (matched > bestMatched || (matched === bestMatched && extra < bestExtra)) {
++            bestMatched = matched;
++            bestExtra = extra;
++            best = [i];
++        }
++        else if (matched === bestMatched && extra === bestExtra) {
++            best.push(i);
++        }
++    }
++    if (best.length <= 1) {
++        return best.length === 1 ? best[0] : -1;
++    }
++    let total = 0;
++    for (const i of best) {
++        total += Math.trunc((sequences[i].rarity || 0) * 100);
++    }
++    if (total <= 0) {
++        return best[0];
++    }
++    const roll = 1 + Math.floor(Math.random() * total);
++    let acc = 0;
++    for (const i of best) {
++        acc += Math.trunc((sequences[i].rarity || 0) * 100);
++        if (roll <= acc) {
++            return i;
++        }
++    }
++    return best[0];
++}
++/**
++ * OpenWar3: the animation a PLACED OBJECT starts on. The engine chooses it at LOAD
++ * time, not sequence 0: CWorldObjects::LoadModel (0x6f774820) creates the model and
++ * then calls sObjectSequenceComplete straight away, which reaches
++ * CDoodads::OnSequenceComplete (0x6f776cc0) with the object's state still 0 -- it asks
++ * for "birth" by EXACT name (ModelSelectAnimation, 0x6f70f930), and when the model has
++ * none it calls ModelSelectDoodadStandAnimation (0x6f70fa90), which is the best-match
++ * rule above against the goal "Stand".
++ *
++ * This is not cosmetic. HFMLampLight.mdx keys its light's KLAV track 0 across "Stand
++ * Alternate" (frames 33..2033) and 1 across "Stand" (2066..4066), and the engine
++ * scores "Stand" (one token) against "Stand Alternate" (two) and takes the former --
++ * so DSIII's street lamp is LIT from the first frame. Starting on sequence 0 left the
++ * lamp dark and the login ground unlit.
++ */
++function ow3SelectDoodadStandSequence(model) {
++    const sequences = model.sequences || [];
++    if (sequences.length === 0) {
++        return -1;
++    }
++    for (let i = 0; i < sequences.length; i++) {
++        if (sequences[i].name.toLowerCase() === 'birth') {
++            return i;
++        }
++    }
++    const best = ow3FindBestMatchAnimation(model, 'Stand');
++    if (best >= 0) {
++        return best;
++    }
++    // No sequence carries the goal at all: ModelSelectRandomAnimation (0x6f70fbc0) is
++    // an exact name match, and ModelSelectClosestAnimation (0x6f70f9d0) truncates the
++    // name at the first space or '-' -- "Stand" has neither, so the two agree here.
++    for (let i = 0; i < sequences.length; i++) {
++        if (sequences[i].name.toLowerCase() === 'stand') {
++            return i;
++        }
++    }
++    return -1;
++}
++/**
 + * OpenWar3: resolve one entry of a map's ground-tile palette to its Terrain.slk row.
 + * Never returns undefined for a map whose tileset letter is real -- see the call site.
 + */
@@ -2518,7 +2653,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..48e77f8ffa8b37c03e12b4ff8992b9a7
  class War3MapViewerMap {
      constructor(viewer, buffer) {
          this.buildVersion = 0;
-@@ -44,6 +79,13 @@ class War3MapViewerMap {
+@@ -44,6 +205,13 @@ class War3MapViewerMap {
          this.mapSize = new Int32Array(2);
          this.tilesets = [];
          this.blightTextureIndex = -1;
@@ -2532,7 +2667,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..48e77f8ffa8b37c03e12b4ff8992b9a7
          this.cliffTilesets = [];
          this.columns = 0;
          this.rows = 0;
-@@ -53,6 +95,10 @@ class War3MapViewerMap {
+@@ -53,6 +221,10 @@ class War3MapViewerMap {
          this.textureBuffer = null;
          this.variationBuffer = null;
          this.waterBuffer = null;
@@ -2543,7 +2678,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..48e77f8ffa8b37c03e12b4ff8992b9a7
          this.heightMap = null;
          this.waterHeightMap = null;
          this.cliffHeightMap = null;
-@@ -85,6 +131,42 @@ class War3MapViewerMap {
+@@ -85,6 +257,51 @@ class War3MapViewerMap {
          this.applyModificationFile(viewer.doodadsData, viewer.destructableMetaData, modifications.w3b);
          this.applyModificationFile(viewer.unitsData, viewer.unitMetaData, modifications.w3u);
          this.applyModificationFile(viewer.unitsData, viewer.unitMetaData, modifications.w3t);
@@ -2560,19 +2695,8 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..48e77f8ffa8b37c03e12b4ff8992b9a7
 +        // The viewer built doodadsData from the INSTALL's SLKs (viewer.js); the map's own
 +        // tables must merge over them exactly as the w3d/w3b modifications above do — or every
 +        // row only the map defines is an "Unknown doodad ID" and never spawns. MappedData.load
-+        // OpenWar3: the ENGINE's object tables, snapshotted BEFORE the map's own
-+        // TEXT SLKs merge over them below.  These are the rows the engine's colour
-+        // chooser reads: the install's Doodads.slk + Units\DestructableData.slk plus
-+        // the map's war3map.w3d / war3map.w3b objects.  A row that exists ONLY in the
-+        // map's TEXT SLK is an id the engine does not know, and the engine's answer
-+        // for an unknown id is WHITE (Game.dll's CDoodads colour chooser, IDA: the
-+        // unknown-id branch returns 0xFFFFFFFF).
-+        this.ow3EngineRows = new Map();
-+        for (const [id, r] of Object.entries(viewer.doodadsData.map)) {
-+            this.ow3EngineRows.set(id, Object.assign({}, r.map));
-+        }
-+
 +        // merges per cell, so a map row wins the cells it names and install-only rows stay.
++        //
 +        for (const slkPath of ['Units\\DestructableData.slk', 'Doodads\\Doodads.slk']) {
 +            const slkFile = this.map.get(slkPath);
 +            if (!slkFile) continue;
@@ -2583,10 +2707,30 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..48e77f8ffa8b37c03e12b4ff8992b9a7
 +                console.warn(`Failed to merge map-internal ${slkPath}: ${e}`);
 +            }
 +        }
++        // OpenWar3: the ENGINE's object tables, snapshotted AFTER the map's own TEXT SLKs
++        // merged over them.  These are the rows the engine's colour chooser reads: the
++        // install's Doodads.slk + Units\DestructableData.slk, the map's war3map.w3d /
++        // war3map.w3b objects, and the map's own TEXT SLKs on top of them.
++        //
++        // The snapshot has to see the map's TEXT SLKs, because the ENGINE sees them too: a
++        // map that ships its own Units\DestructableData.slk REPLACES the install's table
++        // (that is where a map's custom destructables live), so a row the map defines IS a
++        // row the engine knows and it wears that row's own colour.  DSIII's B000 cloud and
++        // B001 stars are rows of the map's own Units\DestructableData.slk and carry
++        // ModelColor 65/80/90 — a dim blue-grey, which is what the real client paints them
++        // (measured off the real capture: the cloud core's top 2 % sits at rgb 91/104/119,
++        // and the star field's brightest star at 76/88/100 — the chromaticity of 65:80:90).
++        // Snapshotted BEFORE the merge, those ids were unknown and the draw rule painted
++        // them WHITE, which is why our cloud bank was a neutral, hard-edged puff instead of
++        // the game's soft blue-grey mass.
++        this.ow3EngineRows = new Map();
++        for (const [id, r] of Object.entries(viewer.doodadsData.map)) {
++            this.ow3EngineRows.set(id, Object.assign({}, r.map));
++        }
          this.loadDoodadsAndDestructibles();
          this.loadUnitsAndItems();
      }
-@@ -109,9 +191,15 @@ class War3MapViewerMap {
+@@ -109,9 +326,15 @@ class War3MapViewerMap {
          }
          this.solverParams.tileset = parser.tileset.toLowerCase();
          this.buildVersion = parser.getBuildVersion();
@@ -2605,7 +2749,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..48e77f8ffa8b37c03e12b4ff8992b9a7
      }
      async loadTerrainCliffsAndWater() {
          const mpqFile = this.map.get('war3map.w3e');
-@@ -136,12 +224,32 @@ class War3MapViewerMap {
+@@ -136,12 +359,32 @@ class War3MapViewerMap {
          // Override the grid based on the map.
          this.worldScene.grid = new grid_1.default(centerOffset[0], centerOffset[1], mapSize[0] * 128 - 128, mapSize[1] * 128 - 128, 16 * 128, 16 * 128);
          const texturesExt = this.solverParams.reforged ? '.dds' : '.blp';
@@ -2640,7 +2784,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..48e77f8ffa8b37c03e12b4ff8992b9a7
              this.tilesets.push(row);
              tilesetTextures.push(this.load(`${row.string('dir')}\\${row.string('file')}${texturesExt}`));
          }
-@@ -165,10 +273,19 @@ class War3MapViewerMap {
+@@ -165,10 +408,19 @@ class War3MapViewerMap {
              Y: 'Village',
              Z: 'Ruins',
          };
@@ -2662,7 +2806,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..48e77f8ffa8b37c03e12b4ff8992b9a7
              this.cliffTilesets.push(row);
              cliffTextures.push(this.load(`${row.string('texDir')}\\${row.string('texFile')}${texturesExt}`));
          }
-@@ -199,6 +316,99 @@ class War3MapViewerMap {
+@@ -199,6 +451,99 @@ class War3MapViewerMap {
          const cliffs = {};
          this.columns = columns - 1;
          this.rows = rows - 1;
@@ -2762,7 +2906,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..48e77f8ffa8b37c03e12b4ff8992b9a7
          for (let y = 0; y < rows; y++) {
              for (let x = 0; x < columns; x++) {
                  const bottomLeft = corners[y][x];
-@@ -209,8 +419,12 @@ class War3MapViewerMap {
+@@ -209,8 +554,12 @@ class War3MapViewerMap {
                  if (y < rows - 1 && x < columns - 1) {
                      // Water can be used with cliffs and normal corners, so store water state regardless.
                      waterFlags[instance] = this.isWater(x, y);
@@ -2777,7 +2921,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..48e77f8ffa8b37c03e12b4ff8992b9a7
                          const bottomLeftLayer = bottomLeft.layerHeight;
                          const bottomRightLayer = corners[y][x + 1].layerHeight;
                          const topLeftLayer = corners[y + 1][x].layerHeight;
-@@ -234,38 +448,30 @@ class War3MapViewerMap {
+@@ -234,38 +583,30 @@ class War3MapViewerMap {
                          }
                      }
                      else {
@@ -2835,7 +2979,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..48e77f8ffa8b37c03e12b4ff8992b9a7
          const gl = this.viewer.gl;
          const webgl = this.viewer.webgl;
          this.vertexBuffer = gl.createBuffer();
-@@ -278,10 +484,25 @@ class War3MapViewerMap {
+@@ -278,10 +619,25 @@ class War3MapViewerMap {
          gl.bindTexture(gl.TEXTURE_2D, this.cliffHeightMap);
          webgl.setTextureMode(gl.CLAMP_TO_EDGE, gl.CLAMP_TO_EDGE, gl.NEAREST, gl.NEAREST);
          gl.texImage2D(gl.TEXTURE_2D, 0, gl.ALPHA, columns, rows, 0, gl.ALPHA, gl.FLOAT, cliffHeights);
@@ -2862,7 +3006,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..48e77f8ffa8b37c03e12b4ff8992b9a7
          this.waterHeightMap = gl.createTexture();
          gl.bindTexture(gl.TEXTURE_2D, this.waterHeightMap);
          webgl.setTextureMode(gl.CLAMP_TO_EDGE, gl.CLAMP_TO_EDGE, gl.NEAREST, gl.NEAREST);
-@@ -291,10 +512,17 @@ class War3MapViewerMap {
+@@ -291,10 +647,17 @@ class War3MapViewerMap {
          gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(instanceCount).map((currentValue, index) => index), gl.STATIC_DRAW);
          this.textureBuffer = gl.createBuffer();
          gl.bindBuffer(gl.ARRAY_BUFFER, this.textureBuffer);
@@ -2882,7 +3026,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..48e77f8ffa8b37c03e12b4ff8992b9a7
          this.waterBuffer = gl.createBuffer();
          gl.bindBuffer(gl.ARRAY_BUFFER, this.waterBuffer);
          gl.bufferData(gl.ARRAY_BUFFER, waterFlags, gl.STATIC_DRAW);
-@@ -358,7 +586,99 @@ class War3MapViewerMap {
+@@ -358,7 +721,106 @@ class War3MapViewerMap {
                          }
                          promise.then((model) => {
                              if (model) {
@@ -2893,26 +3037,29 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..48e77f8ffa8b37c03e12b4ff8992b9a7
 +                                // CWorldObjects::LoadObject does the same via ComputeHeight).
 +                                instance.ow3DooFlags = doodad.flags;
 +                                this.doodads.push(instance);
++                                // OpenWar3: the engine picks the animation a placed
++                                // object STARTS on when it loads it, not sequence 0 --
++                                // see ow3SelectDoodadStandSequence.  DSIII's street
++                                // lamp (HFMLampLight) only lights its ground from the
++                                // "Stand" clip, whose KLAV track is 1, while the
++                                // sequence-0 clip "Stand Alternate" keeps it 0.
++                                const standSequence = ow3SelectDoodadStandSequence(model);
++                                if (standSequence >= 0) {
++                                    instance.instance.setSequence(standSequence);
++                                }
 +                                // OpenWar3: the model's TINT, which the engine reads per
 +                                // object KIND (CDoodads::GetModelVertexColor):
 +                                //   · a DOODAD takes the per-variation vertex tint
 +                                //     (DoodadData's vertR01..vertR10 columns, 0-255). The
 +                                //     engine's own read (CDoodadDB::GetVertexColor, IDA)
 +                                //     composes the column as "vertR%02d" of the placed
-+                                //     variation + 1, reads all three channels, and answers 0
-+                                //     for a cell the w3d never set — i.e. an untinted
-+                                //     variation is tinted BLACK, which on an additive layer
-+                                //     renders as nothing at all. That is exactly what DSIII's
-+                                //     real login shows: the lamp halos D00D placed at
-+                                //     variations 0/1/2/3/5 with only variation 1's columns
-+                                //     set (128,128,255) — the variation-1 halo IS the blue
-+                                //     haze in the sky band, and the variation-0/2/3/5 ones
-+                                //     (over the lantern) vanish entirely, leaving the golden
-+                                //     lantern untouched. The base row's own 255 cells
-+                                //     (Doodads.slk ships them) are inherited by the clone and
-+                                //     overridden only where the w3d set a column, which is
-+                                //     why the moon D00Z (tint 200,225 on variation 1's
-+                                //     columns, blue inherited for B) renders blue-grey.
++                                //     variation + 1 and reads all three channels.  The base
++                                //     row's own 255 cells (Doodads.slk ships all ten) are
++                                //     inherited by the clone and overridden by the w3d's own
++                                //     per-variation values, so the moon D00Z (tint 200/225 on
++                                //     variation 1's columns, blue inherited for B) renders
++                                //     blue-grey, and DSIII's seven lamp halos D00D each wear
++                                //     the colour its own variation names.
 +                                //   · a DESTRUCTABLE takes its row's ModelColor
 +                                //     (DestructableData's colorr/colorg/colorb) — the
 +                                //     destructable table carries no per-variation tint
@@ -2933,13 +3080,15 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..48e77f8ffa8b37c03e12b4ff8992b9a7
 +                                const varIdx = Math.min(doodad.variation + 1, 99);
 +                                const suf = String(varIdx).padStart(2, '0');
 +                                const chan = (v, dflt) => v !== undefined && v !== '' ? Number(v) / 255 : dflt;
-+                                // The row the ENGINE knows.  The map's TEXT SLK adds no
-+                                // rows to the engine's tables, so an id only the map names
-+                                // is unknown to it -- and the engine paints an unknown id
-+                                // WHITE (see the snapshot in the constructor).  That is
-+                                // why DSIII's cloud bank (B000, a row of the map's own
-+                                // table) is a bright white bank in the real client and not
-+                                // the 65/80/90 its own ModelColor column carries.
++                                // The row the ENGINE knows.  The engine loads the map's own
++                                // object tables as well, so a row the map defines is a row
++                                // the engine knows -- and it wears that row's own colour.
++                                // DSIII's cloud bank (B000) and star field (B001) are rows
++                                // of the MAP's Units\DestructableData.slk, whose ModelColor
++                                // is 65/80/90: a dim blue-grey, which is what the real
++                                // client paints them.  Only an id in NEITHER table is
++                                // unknown to the engine, and the engine paints one WHITE
++                                // (see the snapshot in the constructor).
 +                                const engineRow = this.ow3EngineRows.get(doodad.id);
 +                                if (!engineRow) {
 +                                    instance.instance.setVertexColor([1, 1, 1, 1]);
@@ -2960,7 +3109,9 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..48e77f8ffa8b37c03e12b4ff8992b9a7
 +                                        const cr = engineRow[`vertr${suf}`];
 +                                        const cg = engineRow[`vertg${suf}`];
 +                                        const cb = engineRow[`vertb${suf}`];
-+                                        instance.instance.setVertexColor([chan(cr, 0), chan(cg, 0), chan(cb, 0), 1]);
++                                        // An empty tint cell is the editor's default — no
++                                        // tint at all, i.e. WHITE — rather than black.
++                                        instance.instance.setVertexColor([chan(cr, 1), chan(cg, 1), chan(cb, 1), 1]);
 +                                    }
 +                                }
 +                                // OpenWar3: destructibles override their model's
@@ -2983,7 +3134,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..48e77f8ffa8b37c03e12b4ff8992b9a7
                              }
                          });
                      }
-@@ -485,6 +805,31 @@ class War3MapViewerMap {
+@@ -485,6 +947,31 @@ class War3MapViewerMap {
              worldScene.renderTranslucent();
          }
      }
@@ -3015,7 +3166,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..48e77f8ffa8b37c03e12b4ff8992b9a7
      renderGround() {
          if (this.terrainReady) {
              const gl = this.viewer.gl;
-@@ -503,6 +848,9 @@ class War3MapViewerMap {
+@@ -503,6 +990,9 @@ class War3MapViewerMap {
              gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
              webgl.useShader(shader);
              gl.uniformMatrix4fv(uniforms['u_VP'], false, this.worldScene.camera.viewProjectionMatrix);
@@ -3025,7 +3176,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..48e77f8ffa8b37c03e12b4ff8992b9a7
              gl.uniform2fv(uniforms['u_offset'], this.centerOffset);
              gl.uniform2f(uniforms['u_size'], this.columns, this.rows);
              gl.uniform1i(uniforms['u_heightMap'], 15);
-@@ -527,7 +875,19 @@ class War3MapViewerMap {
+@@ -527,7 +1017,19 @@ class War3MapViewerMap {
                  gl.uniform1i(uniforms[`u_tilesets[${i}]`], i);
                  webgl.bindTexture(tilesetTextures[i], i);
              }
@@ -3046,7 +3197,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..48e77f8ffa8b37c03e12b4ff8992b9a7
              if (tilesetCount > 15) {
                  gl.uniform1f(uniforms['u_baseTileset'], 15);
                  for (let i = 0, l = tilesetCount - 15; i < l; i++) {
-@@ -535,7 +895,7 @@ class War3MapViewerMap {
+@@ -535,7 +1037,7 @@ class War3MapViewerMap {
                      gl.uniform1f(uniforms[`u_extended[${i}]`], isExtended);
                      webgl.bindTexture(tilesetTextures[i + 15], i);
                  }
@@ -3055,7 +3206,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..48e77f8ffa8b37c03e12b4ff8992b9a7
              }
              instancedArrays.vertexAttribDivisorANGLE(texturesAttrib, 0);
              instancedArrays.vertexAttribDivisorANGLE(variationsAttrib, 0);
-@@ -558,11 +918,18 @@ class War3MapViewerMap {
+@@ -558,11 +1060,18 @@ class War3MapViewerMap {
              gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
              webgl.useShader(shader);
              gl.uniformMatrix4fv(uniforms['u_VP'], false, this.worldScene.camera.viewProjectionMatrix);
@@ -3074,7 +3225,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..48e77f8ffa8b37c03e12b4ff8992b9a7
              gl.uniform1f(uniforms['u_offsetHeight'], this.waterHeightOffset);
              gl.uniform4fv(uniforms['u_maxDeepColor'], this.maxDeepColor);
              gl.uniform4fv(uniforms['u_minDeepColor'], this.minDeepColor);
-@@ -582,7 +949,14 @@ class War3MapViewerMap {
+@@ -582,7 +1091,14 @@ class War3MapViewerMap {
              gl.vertexAttribPointer(isWaterAttrib, 1, gl.UNSIGNED_BYTE, false, 1, 0);
              instancedArrays.vertexAttribDivisorANGLE(isWaterAttrib, 1);
              gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.faceBuffer);
@@ -3090,7 +3241,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..48e77f8ffa8b37c03e12b4ff8992b9a7
              instancedArrays.vertexAttribDivisorANGLE(isWaterAttrib, 0);
              instancedArrays.vertexAttribDivisorANGLE(instanceAttrib, 0);
          }
-@@ -599,6 +973,9 @@ class War3MapViewerMap {
+@@ -599,6 +1115,9 @@ class War3MapViewerMap {
              gl.disable(gl.BLEND);
              shader.use();
              gl.uniformMatrix4fv(uniforms['u_VP'], false, this.worldScene.camera.viewProjectionMatrix);
@@ -3100,7 +3251,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..48e77f8ffa8b37c03e12b4ff8992b9a7
              gl.uniform1i(uniforms['u_heightMap'], 0);
              gl.uniform2f(uniforms['u_pixel'], 1 / (this.columns + 1), 1 / (this.rows + 1));
              gl.uniform2fv(uniforms['u_centerOffset'], this.centerOffset);
-@@ -612,6 +989,23 @@ class War3MapViewerMap {
+@@ -612,6 +1131,23 @@ class War3MapViewerMap {
                  gl.activeTexture(gl.TEXTURE2);
                  gl.bindTexture(gl.TEXTURE_2D, this.cliffTextures[1].webglResource);
              }
@@ -3124,7 +3275,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..48e77f8ffa8b37c03e12b4ff8992b9a7
              // Set instanced attributes.
              if (!vertexArrayObject) {
                  instancedArrays.vertexAttribDivisorANGLE(attribs['a_instancePosition'], 1);
-@@ -671,6 +1065,106 @@ class War3MapViewerMap {
+@@ -671,6 +1207,106 @@ class War3MapViewerMap {
          const topRight = corners[row + 1][column + 1].layerHeight;
          return bottomLeft !== bottomRight || bottomLeft !== topLeft || bottomLeft !== topRight;
      }
@@ -3161,7 +3312,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..48e77f8ffa8b37c03e12b4ff8992b9a7
 +            gl.uniform1f(uniforms['u_omniEnabled'], 1);
 +            gl.uniform3fv(uniforms['u_omniPos[0]'], omni.positions);
 +            gl.uniform3fv(uniforms['u_omniColor[0]'], omni.colors);
-+            gl.uniform2fv(uniforms['u_omniAtten[0]'], omni.attenuations);
++            gl.uniform2fv(uniforms['u_omniFalloff[0]'], omni.falloff);
 +        }
 +        else {
 +            gl.uniform1f(uniforms['u_omniEnabled'], 0);
@@ -3231,7 +3382,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..48e77f8ffa8b37c03e12b4ff8992b9a7
      /**
       * Is the tile at the given column and row water?
       */
-@@ -692,6 +1186,108 @@ class War3MapViewerMap {
+@@ -692,6 +1328,108 @@ class War3MapViewerMap {
          }
          return 0;
      }
@@ -3340,7 +3491,7 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..48e77f8ffa8b37c03e12b4ff8992b9a7
      /**
       * Get the ground texture of a corner, whether it's normal ground, a cliff, or a blighted corner.
       */
-@@ -730,17 +1326,37 @@ class War3MapViewerMap {
+@@ -730,21 +1468,57 @@ class War3MapViewerMap {
      applyModificationTable(dataMap, metadataMap, modificationTable) {
          for (const modificationObject of modificationTable.objects) {
              let row;
@@ -3382,11 +3533,32 @@ index e4c8ea760e92653ef6423bd34f9111d0b062a901..48e77f8ffa8b37c03e12b4ff8992b9a7
              for (const modification of modificationObject.modifications) {
                  const metadata = metadataMap.getRow(modification.id);
                  if (metadata) {
+-                    row.set(metadata.string('field'), modification.value);
++                    const field = metadata.string('field');
++                    // OpenWar3: a REPEATED field's index is part of the COLUMN NAME.  The
++                    // per-variation tints are `dvr1`/`dvg1`/`dvb1`: DoodadMetaData.slk names
++                    // their field `vertR`/`vertG`/`vertB` with repeat 10, and Doodads.slk's own
++                    // columns are `vertR01`..`vertR10` — one per variation.  The w3d carries
++                    // the variation in `levelOrVariation` (1-based: `numVar` 7 gives 1..7),
++                    // so the writer has to put the number back into the name.  Without it
++                    // every per-variation tint landed in a `vertR` column that no reader
++                    // looks at, and the objects that wear one (DSIII's moon and its lamp
++                    // halos) came out BLACK.
++                    const repeat = Number(metadata.string('repeat')) || 1;
++                    if (repeat > 1) {
++                        row.set(field + String(modification.levelOrVariation).padStart(2, '0'), modification.value);
++                    }
++                    else {
++                        row.set(field, modification.value);
++                    }
+                 }
+                 else {
+                     console.warn('Unknown modification ID', modification);
 diff --git a/dist/cjs/viewer/handlers/w3x/shaders/cliffs.frag.js b/dist/cjs/viewer/handlers/w3x/shaders/cliffs.frag.js
-index c2a27060799ff26b5c86ccedd0bedda2d6a54746..ae9a20b10ee82cfd508b6772aa069b166914d245 100644
+index c2a27060799ff26b5c86ccedd0bedda2d6a54746..bc0db4389031cda2cf1c2843181e4ba2fb0e0765 100644
 --- a/dist/cjs/viewer/handlers/w3x/shaders/cliffs.frag.js
 +++ b/dist/cjs/viewer/handlers/w3x/shaders/cliffs.frag.js
-@@ -9,6 +9,54 @@ ${precision_glsl_1.default}
+@@ -9,6 +9,58 @@ ${precision_glsl_1.default}
  uniform sampler2D u_texture1;
  uniform sampler2D u_texture2;
  
@@ -3427,7 +3599,11 @@ index c2a27060799ff26b5c86ccedd0bedda2d6a54746..ae9a20b10ee82cfd508b6772aa069b16
 +uniform float u_omniEnabled;
 +uniform vec3 u_omniPos[8]; // world space, from the light NODE (they animate)
 +uniform vec3 u_omniColor[8]; // Color × Intensity; unused slots are black
-+uniform vec2 u_omniAtten[8]; // (AttenuationStart, AttenuationEnd)
++// (linear, quadratic) attenuation coefficients. WC3 1.27 Game.dll sets the falloff
++// ONCE at start-up — GxLightingSetFalloff(0, 0.0005) — and every point light uses it:
++// the attenuation is 1/(1 + linear·d + quadratic·d²). The MDX LITE chunk's own
++// AttenuationStart/End never reach the light (the engine's CGxLight has no range).
++uniform vec2 u_omniFalloff[8];
 +
 +// OpenWar3: linear distance fog (environment haze; src/render/fog.ts). Reuses the
 +// cliff's world position (v_position). Distinct from the fog-of-war mask above.
@@ -3441,27 +3617,36 @@ index c2a27060799ff26b5c86ccedd0bedda2d6a54746..ae9a20b10ee82cfd508b6772aa069b16
  varying vec3 v_normal;
  varying vec2 v_uv;
  varying float v_texture;
-@@ -35,6 +83,44 @@ void main() {
+@@ -35,6 +87,53 @@ void main() {
  
    // color *= clamp(dot(normal, lightDirection) + 0.45, 0.1, 1.0);
  
-+  // OpenWar3: day/night shading (ambient + diffuse*N·L), before the fog dimming.
++  // OpenWar3: the day/night shading and the model-light pools are ONE light sum, and
++  // it MULTIPLIES the texel (D3D9 clamps the sum to 1 per channel first). The pools
++  // attenuate by the engine's 1/(1 + linear·d + quadratic·d²) — the global falloff
++  // GxLightingSetFalloff(0, 0.0005) — so a lamp throws a wide soft pool.
++  vec3 light = vec3(0.0);
++  float lit = 0.0;
 +  if (u_dncEnabled > 0.5) {
 +    float ndotl = max(dot(normalize(v_normal), u_dncLightDir), 0.0);
-+    color.rgb *= clamp(u_dncAmbient + u_dncDiffuse * ndotl, 0.0, 1.0);
++    light += u_dncAmbient + u_dncDiffuse * ndotl;
++    lit = 1.0;
 +  }
 +
-+  // OpenWar3: model-light pools (see the u_omni* block). Additive over the day/night
-+  // base, clamped per light so an intensity-10 lamp saturates the pool instead of the
-+  // whole map — which is what the real client shows next to a lamp.
 +  if (u_omniEnabled > 0.5) {
++    vec3 n = normalize(v_normal);
 +    for (int i = 0; i < 8; i++) {
 +      vec3 toLight = u_omniPos[i] - v_position;
 +      float dist = length(toLight);
-+      float atten = clamp((u_omniAtten[i].y - dist) / max(u_omniAtten[i].y - u_omniAtten[i].x, 0.001), 0.0, 1.0);
-+      float ndotl = max(dot(normalize(v_normal), toLight / max(dist, 0.001)), 0.0);
-+      color.rgb += min(u_omniColor[i] * (atten * ndotl), vec3(1.0));
++      vec2 fall = u_omniFalloff[i];
++      float atten = 1.0 / (1.0 + fall.x * dist + fall.y * dist * dist);
++      float ndotl = max(dot(n, toLight / max(dist, 0.001)), 0.0);
++      light += u_omniColor[i] * (atten * ndotl);
 +    }
++    lit = 1.0;
++  }
++  if (lit > 0.5) {
++    color.rgb *= clamp(light, 0.0, 1.0);
 +  }
 +
 +  // OpenWar3: atmospheric distance fog (haze), before the fog-of-war dimming.
@@ -3564,10 +3749,10 @@ index 797d91b4335ebc7297fff0e109c98443bd35487c..66ee7f84ff8738975cd9397a03854f18
    v_texture = a_instanceTexture;
    v_position = a_position + vec3(a_instancePosition.xy, a_instancePosition.z + height * 128.0);
 diff --git a/dist/cjs/viewer/handlers/w3x/shaders/ground.frag.js b/dist/cjs/viewer/handlers/w3x/shaders/ground.frag.js
-index 70449d8d52f46ac83662d302c94dcee8e29147e7..4b3efd2231fb05b1fbe24313034fdddbff5fd7e0 100644
+index 70449d8d52f46ac83662d302c94dcee8e29147e7..2a8a5327e6bf8e0484439361a46397b71ba247f1 100644
 --- a/dist/cjs/viewer/handlers/w3x/shaders/ground.frag.js
 +++ b/dist/cjs/viewer/handlers/w3x/shaders/ground.frag.js
-@@ -6,11 +6,45 @@ ${precision_glsl_1.default}
+@@ -6,11 +6,49 @@ ${precision_glsl_1.default}
  
  uniform sampler2D u_tilesets[15];
  
@@ -3589,7 +3774,11 @@ index 70449d8d52f46ac83662d302c94dcee8e29147e7..4b3efd2231fb05b1fbe24313034fdddb
 +uniform float u_omniEnabled;
 +uniform vec3 u_omniPos[8]; // world space, from the light NODE (they animate)
 +uniform vec3 u_omniColor[8]; // Color × Intensity; unused slots are black
-+uniform vec2 u_omniAtten[8]; // (AttenuationStart, AttenuationEnd)
++// (linear, quadratic) attenuation coefficients. WC3 1.27 Game.dll sets the falloff
++// ONCE at start-up — GxLightingSetFalloff(0, 0.0005) — and every point light uses it:
++// the attenuation is 1/(1 + linear·d + quadratic·d²). The MDX LITE chunk's own
++// AttenuationStart/End never reach the light (the engine's CGxLight has no range).
++uniform vec2 u_omniFalloff[8];
 +
 +// OpenWar3: linear distance fog (the WC3 environment haze; src/render/fog.ts). Set on
 +// the map render from the w3i fog settings. Distinct from fog-of-war (u_fog*).
@@ -3614,31 +3803,43 @@ index 70449d8d52f46ac83662d302c94dcee8e29147e7..4b3efd2231fb05b1fbe24313034fdddb
  
  vec4 sample(float tileset, vec2 uv) {
    // 1.0 - 1.0 == 0.0 is not always true.
-@@ -70,9 +104,29 @@ void main() {
+@@ -70,9 +108,41 @@ void main() {
      color = blend(color, v_tilesets[3], v_uv[3]);
    }
  
 -  //color *= clamp(dot(v_normal, lightDirection) + 0.45, 0.0, 1.0);
-+  // OpenWar3: WC3's fixed-function lighting — ambient + diffuse*N·L, clamped per
-+  // channel, modulating the texel. At noon that saturates to white (the ground reads
-+  // as its raw texture); at midnight Lordaeron's sun sinks to (0.80, 0.53, 0.31),
-+  // which is exactly the warm dim brown the real game paints.
++  // OpenWar3: WC3's fixed-function lighting. D3D9 sums every enabled light's
++  // (Diffuse × attenuation × N·L) and the ambients, CLAMPS that sum to 1 per channel,
++  // and only then modulates the texel — so a lamp RAISES the light on the ground
++  // instead of being added to its colour. At noon the sum saturates to white (the
++  // ground reads as its raw texture); at midnight Lordaeron's sun sinks to
++  // (0.80, 0.53, 0.31), the warm dim brown the real game paints.
++  vec3 light = vec3(0.0);
++  float lit = 0.0;
 +  if (u_dncEnabled > 0.5) {
 +    float ndotl = max(dot(normalize(v_normal), u_dncLightDir), 0.0);
-+    color.rgb *= clamp(u_dncAmbient + u_dncDiffuse * ndotl, 0.0, 1.0);
++    light += u_dncAmbient + u_dncDiffuse * ndotl;
++    lit = 1.0;
 +  }
 +
-+  // OpenWar3: model-light pools (see the u_omni* block). Additive over the day/night
-+  // base, clamped per light so an intensity-10 lamp saturates the pool instead of the
-+  // whole map — which is what the real client shows next to a lamp.
++  // OpenWar3: the model-light pools (see the u_omni* block) are part of that SAME sum,
++  // and their attenuation is the engine's: 1/(1 + linear·d + quadratic·d²) with the
++  // global falloff GxLightingSetFalloff(0, 0.0005). A lamp therefore throws a wide soft
++  // pool, not the hard disc a linear window cuts.
 +  if (u_omniEnabled > 0.5) {
++    vec3 n = normalize(v_normal);
 +    for (int i = 0; i < 8; i++) {
 +      vec3 toLight = u_omniPos[i] - v_dfPos;
 +      float dist = length(toLight);
-+      float atten = clamp((u_omniAtten[i].y - dist) / max(u_omniAtten[i].y - u_omniAtten[i].x, 0.001), 0.0, 1.0);
-+      float ndotl = max(dot(normalize(v_normal), toLight / max(dist, 0.001)), 0.0);
-+      color.rgb += min(u_omniColor[i] * (atten * ndotl), vec3(1.0));
++      vec2 fall = u_omniFalloff[i];
++      float atten = 1.0 / (1.0 + fall.x * dist + fall.y * dist * dist);
++      float ndotl = max(dot(n, toLight / max(dist, 0.001)), 0.0);
++      light += u_omniColor[i] * (atten * ndotl);
 +    }
++    lit = 1.0;
++  }
++  if (lit > 0.5) {
++    color.rgb *= clamp(light, 0.0, 1.0);
 +  }
  
 -  gl_FragColor = vec4(color.rgb, 1.0);
@@ -3685,10 +3886,10 @@ index 26a5b4c8758bfb80c62f458fbc4a85293c18060b..04cc367537276e961570be1c82849624
      v_uv[0] = vec2(0.0);
      v_uv[1] = vec2(0.0);
 diff --git a/dist/cjs/viewer/handlers/w3x/shaders/water.frag.js b/dist/cjs/viewer/handlers/w3x/shaders/water.frag.js
-index 6f31791753b2bf146060b8adfb44767cc468be55..6ec4468e14c073b364214c13fd597e5773d0079f 100644
+index 6f31791753b2bf146060b8adfb44767cc468be55..ade3ed7c36e608f81fcd9a44db87ce184616ae44 100644
 --- a/dist/cjs/viewer/handlers/w3x/shaders/water.frag.js
 +++ b/dist/cjs/viewer/handlers/w3x/shaders/water.frag.js
-@@ -6,11 +6,80 @@ ${precision_glsl_1.default}
+@@ -6,11 +6,93 @@ ${precision_glsl_1.default}
  
  uniform sampler2D u_waterTexture;
  
@@ -3707,7 +3908,11 @@ index 6f31791753b2bf146060b8adfb44767cc468be55..6ec4468e14c073b364214c13fd597e57
 +uniform float u_omniEnabled;
 +uniform vec3 u_omniPos[8]; // world space, from the light NODE (they animate)
 +uniform vec3 u_omniColor[8]; // Color × Intensity; unused slots are black
-+uniform vec2 u_omniAtten[8]; // (AttenuationStart, AttenuationEnd)
++// (linear, quadratic) attenuation coefficients. WC3 1.27 Game.dll sets the falloff
++// ONCE at start-up — GxLightingSetFalloff(0, 0.0005) — and every point light uses it:
++// the attenuation is 1/(1 + linear·d + quadratic·d²). The MDX LITE chunk's own
++// AttenuationStart/End never reach the light (the engine's CGxLight has no range).
++uniform vec2 u_omniFalloff[8];
 +
 +// OpenWar3: linear distance fog (environment haze; src/render/fog.ts).
 +uniform float u_distFogEnabled;
@@ -3735,21 +3940,30 @@ index 6f31791753b2bf146060b8adfb44767cc468be55..6ec4468e14c073b364214c13fd597e57
 -  gl_FragColor = texture2D(u_waterTexture, v_uv) * v_color;
 +  vec4 color = texture2D(u_waterTexture, v_uv) * v_color;
 +
++  // OpenWar3: one light sum for the day/night rig and the model-light pools, and it
++  // MULTIPLIES the water (D3D9 clamps the sum to 1 per channel first). The pools
++  // attenuate by the engine's 1/(1 + linear·d + quadratic·d²) — the global falloff
++  // GxLightingSetFalloff(0, 0.0005).
++  vec3 light = vec3(0.0);
++  float lit = 0.0;
 +  if (u_dncEnabled > 0.5) {
-+    color.rgb *= clamp(u_dncAmbient + u_dncDiffuse * max(u_dncLightDir.z, 0.0), 0.0, 1.0);
++    light += u_dncAmbient + u_dncDiffuse * max(u_dncLightDir.z, 0.0);
++    lit = 1.0;
 +  }
 +
-+  // OpenWar3: model-light pools (see the u_omni* block). Additive over the day/night
-+  // base, clamped per light so an intensity-10 lamp saturates the pool instead of the
-+  // whole map — which is what the real client shows next to a lamp.
 +  if (u_omniEnabled > 0.5) {
 +    for (int i = 0; i < 8; i++) {
 +      vec3 toLight = u_omniPos[i] - v_dfPos;
 +      float dist = length(toLight);
-+      float atten = clamp((u_omniAtten[i].y - dist) / max(u_omniAtten[i].y - u_omniAtten[i].x, 0.001), 0.0, 1.0);
++      vec2 fall = u_omniFalloff[i];
++      float atten = 1.0 / (1.0 + fall.x * dist + fall.y * dist * dist);
 +      float ndotl = max(toLight.z / max(dist, 0.001), 0.0); // water is a flat plane — straight up
-+      color.rgb += min(u_omniColor[i] * (atten * ndotl), vec3(1.0));
++      light += u_omniColor[i] * (atten * ndotl);
 +    }
++    lit = 1.0;
++  }
++  if (lit > 0.5) {
++    color.rgb *= clamp(light, 0.0, 1.0);
 +  }
 +
 +  // Atmospheric haze — mix rgb only (keep the shore-fade alpha intact).
